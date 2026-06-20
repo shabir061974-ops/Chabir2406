@@ -1,0 +1,38 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    # Optional: enable auth in production
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: faiha
+    #   MONGO_INITDB_ROOT_PASSWORD: changeme
+    networks: [faiha]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    depends_on: [mongo]
+    networks: [faiha]
+    # backend listens on 8001 internally; exposed through the frontend nginx proxy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Public URL where the app is served (your domain). API is reached at <this>/api
+        REACT_APP_BACKEND_URL: "https://your-domain.com"
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "80:80"
+      # - "443:443"   # add after you set up TLS (see DEPLOY_HOSTINGER.md)
+    networks: [faiha]
+
+volumes:
+  mongo_data:
+
+networks:
+  faiha:

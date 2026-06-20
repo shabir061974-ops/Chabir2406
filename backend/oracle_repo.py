@@ -100,7 +100,7 @@ def _table():
 
 
 def _slugify(cat):
-    return (cat or "uncategorized").strip().lower().replace(" ", "-").replace("&", "and")
+    return str(cat if cat is not None else "uncategorized").strip().lower().replace(" ", "-").replace("&", "and")
 
 
 def list_products(limit=1000):
@@ -123,7 +123,7 @@ def list_products(limit=1000):
             logger.info("Oracle list_products rows=%d dur=%.3fs", len(rows), time.time() - t0)
             out = []
             for pid, cat, name, barcode, price, qty in rows:
-                name = (name or "").strip()
+                name = str(name or "").strip()
                 out.append({
                     "id": f"ora-{barcode or pid}",
                     "source": "oracle",
