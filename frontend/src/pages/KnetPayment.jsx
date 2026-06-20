@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
@@ -12,6 +12,7 @@ export default function KnetPayment() {
     const { orderNo } = useParams();
     const { t } = useLang();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [processing, setProcessing] = useState(false);
 
     const { data: order } = useQuery({
@@ -23,6 +24,8 @@ export default function KnetPayment() {
         setProcessing(true);
         try {
             const { data } = await api.post("/payments/knet/callback", { order_no: orderNo, result });
+            queryClient.setQueryData(["order", orderNo], data.order);
+            await queryClient.invalidateQueries({ queryKey: ["order", orderNo], refetchType: "active" });
             if (data.success) toast.success("Payment captured");
             else toast.error("Payment cancelled");
             navigate(`/order/${orderNo}`);
