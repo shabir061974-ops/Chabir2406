@@ -1,0 +1,47 @@
+{
+  "summary": "First full-stack test pass for Faiha Co-operative supermarket. Backend: 27/27 pytest tests passed covering public catalog, settings, auth (login/me/refresh/cookies), checkout (validate-stock, below_min_order, COD with FAIHA10 coupon, KNET + callback CAPTURED), order tracking, and complete admin suite (dashboard, orders status update, product/category/coupon CRUD, delivery config, customers, reports). Frontend (Playwright) verified: home (hero/categories/featured), catalog browsing+search+sort, PDP loads with KD 3-decimal price, add-to-cart from both home card and PDP (cart-count badge updates), cart drawer with proceed-checkout, full COD checkout flow with FAIHA10 coupon successfully placed order and navigated to /order/{order_no} confirmation, track-order page resolved order, EN<->AR language toggle flips document dir to rtl, full KNET flow placed order then knet-success callback navigated back to /order/{order_no}. Admin login (admin@faiha.coop / Faiha@2026) redirects to /admin/dashboard, KPI cards + revenue line chart + status donut + Recent Orders table render, admin product create (add-product-button -> dialog -> save-product) inserts product and reflects in list, reports page shows KD totals for daily/weekly/monthly with Export.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "OrderConfirmation (after KNET)",
+        "issue": "After successful KNET callback, the confirmation page displays stale 'KNET · Pending' with only the Pending step highlighted, even though the backend correctly transitions to payment_status=paid / order_status=confirmed (verified via /api/orders/{no} and admin Recent Orders table which shows the same order as 'confirmed'). Root cause: KnetPayment.jsx prefetches the order with useQuery(queryKey:['order', orderNo]). After POST /payments/knet/callback succeeds, it calls navigate(`/order/${orderNo}`) without invalidating the cache. OrderConfirmation.jsx reuses the same queryKey and returns React Query's cached pre-payment snapshot.",
+        "selector": "[data-testid=\"order-tracker\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix KNET -> OrderConfirmation stale cache: in /app/frontend/src/pages/KnetPayment.jsx pay() handler, before navigate(), call queryClient.invalidateQueries({queryKey:['order', orderNo]}) (or queryClient.setQueryData(['order', orderNo], data.order)). Without this, customers who pay via KNET see their order stuck as 'Pending' on the confirmation page despite the server-side state being 'confirmed'."
+  ],
+  "critical_code_review_comments": [
+    "KnetPayment.jsx React Query cache not invalidated after callback -> stale order data on confirmation (see frontend_issues).",
+    "Checkout.applyCoupon optimistically sets {type:'percent', value:10} for any code entered; backend ultimately authoritative so totals end up correct on server but UI may show wrong client-side discount preview for unknown codes. Consider calling a /coupons/validate endpoint or only update appliedCoupon after server confirmation.",
+    "set_auth_cookies uses secure=False — acceptable for this preview env but must be secure=True in production over HTTPS.",
+    "audit() ignores HTTP method-aware before/after for category & coupon updates (some endpoints pass None for both); low priority.",
+    "/api/auth/me returns 401 to anonymous visitors (expected) but Home calls it on every load creating noisy console 401s; consider conditional fetch only when an auth cookie is present.",
+    "Coupon optimistic apply: applyCoupon never validates with backend; only checkout/place-order recomputes discount, which is fine but UX-wise users could see a 'coupon applied' toast even for invalid codes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (27/27)",
+    "frontend": "~95% (all flows pass; 1 cache-related stale UI on KNET confirmation)"
+  },
+  "test_credentials": "Admin: admin@faiha.coop / Faiha@2026 (from /app/memory/test_credentials.md). Coupon FAIHA10 (10% percent). Min order KD 2.000.",
+  "seed_data_creation": "Test orders created during run (TEST Buyer / TEST KnetX) and one TEST_AutoProd product created via admin UI (not cleaned). Pytest also creates and cleans TEST_Prod product, TEST_Cat category, TEST<ts> coupon.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/backend_test.py covers 27 cases - rerun with: pytest /app/backend/tests/backend_test.py -v. All API contracts validated incl. KNET callback. The single known issue is the React Query cache reuse between KnetPayment and OrderConfirmation - once main agent invalidates the cache after callback, just re-run the KNET frontend flow and verify the tracker shows 'Confirmed' step active and badge reads 'KNET · Confirmed' / 'Paid'. Admin product/coupon CRUD verified end-to-end. Some 401 console errors from /api/auth/me on storefront are expected for guest users.",
+  "rca of the issue": "KNET stale order on confirmation page: KnetPayment.jsx (line 17-20) and OrderConfirmation.jsx (line 16-19) both use useQuery({queryKey:['order', orderNo]}). When KnetPayment loads, the order (status=pending, payment_status=pending) is cached. The pay() handler POSTs to /payments/knet/callback which returns the UPDATED order, but the handler ignores that payload and only calls navigate(). OrderConfirmation then mounts, finds a fresh cache entry (same key, default staleTime=0 but cache is still returned synchronously while a background refetch fires), and renders pending state. Background refetch will eventually update but the initial flash already misleads users; observed result is that the page stays Pending until manual refresh. Fix: in pay(), after `const { data }` returns, call queryClient.setQueryData(['order', orderNo], data.order) and/or queryClient.invalidateQueries({queryKey:['order', orderNo], refetchType:'active'}) before navigate."
+}
