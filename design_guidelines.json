@@ -1,0 +1,131 @@
+{
+  "theme": "LIGHT",
+  "archetype": "1_ORGANIC_EARTHY_PREMIUM",
+  "description": "A premium, bilingual (English/Arabic RTL) supermarket e-commerce experience for Faiha Co-operative Society, Kuwait. The design blends organic warmth (fresh produce, community trust) with high-end structural clarity. It avoids generic supermarket 'red/blue' palettes, opting for deep forest green and terracotta. The admin dashboard borrows from Swiss/High-Contrast principles for maximum operational clarity.",
+  "colors": {
+    "storefront": {
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "primary": "#164E2E",
+      "primary_hover": "#113A22",
+      "accent": "#D95D39",
+      "accent_hover": "#BF5030",
+      "text_main": "#1A1A1A",
+      "text_muted": "#595959",
+      "border": "#E8E6E1",
+      "success": "#2D7A4D",
+      "error": "#B91C1C",
+      "price_kd": "#164E2E"
+    },
+    "admin_dashboard": {
+      "background": "#F4F5F7",
+      "surface": "#FFFFFF",
+      "primary": "#164E2E",
+      "text_main": "#111827",
+      "text_muted": "#6B7280",
+      "border": "#E5E7EB",
+      "chart_colors": ["#164E2E", "#D95D39", "#F59E0B", "#3B82F6"]
+    }
+  },
+  "typography": {
+    "font_family_latin": {
+      "headings": "'Outfit', sans-serif",
+      "body": "'Figtree', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "font_family_arabic": {
+      "headings": "'Cairo', sans-serif",
+      "body": "'Tajawal', sans-serif"
+    },
+    "hierarchy": {
+      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "h3_card_title": "text-lg sm:text-xl font-medium",
+      "body_large": "text-base leading-relaxed",
+      "body_small": "text-sm text-text-muted",
+      "overline": "text-xs uppercase tracking-[0.2em] font-medium"
+    },
+    "notes": "No Inter or generic sans for headings. Use CSS logical variables to switch font-family globally based on the [dir='rtl'] attribute."
+  },
+  "spacing_and_layout": {
+    "storefront_grid": "Bento Grid approach for homepage (e.g., Hero spanning 8 cols, secondary promos 4 cols). Wide gaps (gap-8). Generous container paddings (p-6 to p-12).",
+    "product_cards": "Minimalist, rounded-2xl surfaces. Inner padding p-5. Image max-height constrained. 'Add to Cart' button spans full width of card at bottom.",
+    "admin_grid": "Control Room approach. High density, gap-4 to gap-6. Every widget full height.",
+    "borders_and_radius": "Soft organic curves for storefront (rounded-2xl for cards, rounded-full for primary buttons). Sharp utility for admin (rounded-md, 1px solid borders).",
+    "rtl_guidelines": {
+      "critical_rule": "NEVER use left/right utilities (e.g., ml-4, pr-2, left-0).",
+      "required_utilities": "MUST use logical properties native to Tailwind: ms-*, me-*, ps-*, pe-*, start-*, end-*. text-start, text-end.",
+      "icons": "Flip directional icons (arrows, chevrons, cart direction) using 'rtl:-scale-x-100'."
+    }
+  },
+  "components_strategy": {
+    "navigation": {
+      "desktop": "Crystal Glass sticky header (backdrop-blur-xl bg-white/80). Visible category links, prominent Language Toggle (EN/عربي), Search Bar, and Cart drawer trigger.",
+      "mobile": "Bottom fixed navigation bar for core routes (Home, Categories, Cart, Account), plus top header for Search."
+    },
+    "product_card": {
+      "visual": "Flat white background, 1px subtle border, no heavy drop shadows default. Hover state: slight lift (-translate-y-1), subtle ambient shadow.",
+      "price_display": "Emphasize KD currency with 3 decimals (e.g., KD 1.250).",
+      "actions": "Quantity increment/decrement built into the 'Add' button post-click."
+    },
+    "cart_checkout": {
+      "cart": "Slide-out drawer (sheet component). Must respect RTL side (slides from right in LTR, slides from left in RTL).",
+      "checkout": "Guest checkout allowed. Accordion style for Delivery Address -> Payment (COD or KNET). Trust signals visible."
+    },
+    "admin_dashboard": {
+      "style": "Cardless or very subtle 1px border cards. Dense data tables (Shadcn Table) with sticky headers. Use Recharts for KPIs."
+    }
+  },
+  "motion_and_interaction": {
+    "hover_states": "Product cards: group-hover image scale (scale-105 transition-transform duration-500 ease-out). Buttons: active:scale-95.",
+    "page_transitions": "Framer motion fade and slight slide-up (y: 10, opacity: 0 to y: 0, opacity: 1) on section scroll.",
+    "accessibility": "focus:ring-2 focus:ring-primary focus:ring-offset-2. Respect prefers-reduced-motion."
+  },
+  "testing_attributes": {
+    "requirement": "All interactive and key informational elements MUST include 'data-testid' attribute (kebab-case, role-based).",
+    "examples": "data-testid='add-to-cart-button', data-testid='language-toggle', data-testid='checkout-submit', data-testid='product-price'"
+  },
+  "media_assets": {
+    "hero_backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1573246123716-6b1782bfc499?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwxfHxmcmVzaCUyMG9yZ2FuaWMlMjB2ZWdldGFibGVzJTIwZ3JvY2VyaWVzJTIwZmxhdGxheXxlbnwwfHx8fDE3ODE5ODYxODN8MA&ixlib=rb-4.1.0&q=85",
+        "category": "hero",
+        "description": "Vegetables and fruits display, organic and fresh, suitable for a storefront hero background with a gradient overlay (bg-black/30) to make text readable."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1761972058787-f381fb27463c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDN8MHwxfHNlYXJjaHwyfHxwcmVtaXVtJTIwYmFrZXJ5JTIwYnJlYWQlMjBwYXN0cnklMjBtYXJrZXR8ZW58MHx8fHwxNzgxOTg2MTgyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "category_banner",
+        "description": "Premium bakery scene for the Bakery category highlight."
+      }
+    ],
+    "lifestyle_and_community": [
+      {
+        "url": "https://images.unsplash.com/photo-1753354868403-bb9e04e74668?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwyfHxtaWRkbGUlMjBlYXN0ZXJuJTIwZmFtaWx5JTIwc2hvcHBpbmclMjBncm9jZXJ5fGVufDB8fHx8MTc4MTk4NjE4M3ww&ixlib=rb-4.1.0&q=85",
+        "category": "about_community",
+        "description": "Middle Eastern family shopping, emphasizing the Faiha Co-op community focus."
+      }
+    ],
+    "products_placeholders": [
+      {
+        "url": "https://images.pexels.com/photos/12765459/pexels-photo-12765459.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "product_image",
+        "description": "Fresh produce items for product card placeholders."
+      },
+      {
+        "url": "https://images.pexels.com/photos/33043943/pexels-photo-33043943.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "product_image",
+        "description": "Croissants for bakery product card placeholders."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Initialize Tailwind config with the custom colors provided.",
+    "Install Google Fonts (Outfit, Figtree, Cairo, Tajawal) and configure in CSS to switch based on html[dir='rtl'].",
+    "Use Phosphor Icons (@phosphor-icons/react) for high-end duotone/regular icons.",
+    "Implement language context toggle that dynamically changes document.dir to 'rtl' or 'ltr'.",
+    "Strictly use logical margin/padding (ms-, me-, ps-, pe-) across ALL components.",
+    "Build Shadcn components natively with Tailwind RTL variants (e.g., rtl:space-x-reverse, logical padding).",
+    "Ensure 'KD' currency formatting explicitly uses 3 decimal places across cart, product, and admin pages.",
+    "Ensure all interactive elements have data-testid attributes for testing."
+  ]
+}
