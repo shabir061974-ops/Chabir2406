@@ -57,7 +57,7 @@ export default function Dashboard() {
                         <ResponsiveContainer width="100%" height={260}>
                             <PieChart>
                                 <Pie data={data.status_breakdown} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                                    {data.status_breakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                    {data.status_breakdown.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} />)}
                                 </Pie>
                                 <Tooltip />
                             </PieChart>

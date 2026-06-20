@@ -47,7 +47,7 @@ export default function DeliveryConfig() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {form.time_slots.map((s, i) => (
-                            <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-sm">{s}<button onClick={() => removeSlot(i)}><X className="w-3.5 h-3.5" /></button></span>
+                            <span key={`${s}-${i}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-sm">{s}<button onClick={() => removeSlot(i)}><X className="w-3.5 h-3.5" /></button></span>
                         ))}
                     </div>
                 </div>

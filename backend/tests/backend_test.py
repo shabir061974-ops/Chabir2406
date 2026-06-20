@@ -7,8 +7,10 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://bilingual-store-5.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "admin@faiha.coop"
-ADMIN_PASSWORD = "Faiha@2026"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@faiha.coop")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_PASSWORD env var is required to run backend tests")
 
 
 @pytest.fixture(scope="session")

@@ -18,7 +18,7 @@ export default function Customers() {
                         </tr></thead>
                         <tbody>
                             {customers.map((c, i) => (
-                                <tr key={i} className="border-b border-border/60" data-testid={`customer-row-${i}`}>
+                                <tr key={c.phone || i} className="border-b border-border/60" data-testid={`customer-row-${i}`}>
                                     <td className="p-3 font-medium">{c.name}</td>
                                     <td className="text-muted-foreground">{c.phone}</td>
                                     <td className="text-muted-foreground">{c.area}</td>

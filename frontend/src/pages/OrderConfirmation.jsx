@@ -64,7 +64,7 @@ export default function OrderConfirmation() {
                 </div>
                 <div className="space-y-3">
                     {order.items.map((it, i) => (
-                        <div key={i} className="flex items-center gap-3 text-sm">
+                        <div key={`${it.product_id}-${i}`} className="flex items-center gap-3 text-sm">
                             <div className="w-12 h-12 rounded-lg overflow-hidden bg-secondary shrink-0">{it.image && <img src={it.image} alt="" className="w-full h-full object-cover" />}</div>
                             <span className="flex-1">{ln(it)} × {it.qty}</span>
                             <span className="font-semibold">{formatKD(it.line_total)}</span>

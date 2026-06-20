@@ -98,7 +98,7 @@ export default function Orders() {
                                 </div>
                                 <div className="space-y-2">
                                     {selected.items.map((it, i) => (
-                                        <div key={i} className="flex justify-between"><span>{it.name_en} × {it.qty}</span><span className="font-semibold">{formatKD(it.line_total)}</span></div>
+                                        <div key={`${it.product_id}-${i}`} className="flex justify-between"><span>{it.name_en} × {it.qty}</span><span className="font-semibold">{formatKD(it.line_total)}</span></div>
                                     ))}
                                 </div>
                                 <div className="border-t border-border pt-2 space-y-1">
