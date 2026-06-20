@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Leaf, MapPin, Phone, Lock } from "lucide-react";
+import { MapPin, Phone, Lock } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 
 export const Footer = () => {
@@ -9,7 +9,7 @@ export const Footer = () => {
             <div className="mx-auto max-w-7xl px-6 py-14 grid gap-10 md:grid-cols-4">
                 <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                        <span className="grid place-items-center w-9 h-9 rounded-lg bg-white/15"><Leaf className="w-5 h-5" /></span>
+                        <img src="/faiha-logo.png" alt={t("brand")} className="w-10 h-10 rounded-full object-cover bg-white" />
                         <span className="font-heading font-extrabold text-lg">{t("brand")}</span>
                     </div>
                     <p className="text-sm text-white/70 leading-relaxed">{t("tagline")}</p>

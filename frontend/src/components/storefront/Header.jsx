@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Globe, Leaf, Menu, X } from "lucide-react";
+import { Search, ShoppingCart, Globe, Menu, X } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,7 @@ export const Header = ({ categories = [] }) => {
             <div className="mx-auto max-w-7xl px-4 sm:px-6">
                 <div className="flex items-center gap-4 h-16 sm:h-20">
                     <Link to="/" className="flex items-center gap-2 shrink-0" data-testid="logo-link">
-                        <span className="grid place-items-center w-10 h-10 rounded-xl bg-forest text-white">
-                            <Leaf className="w-5 h-5" />
-                        </span>
+                        <img src="/faiha-logo.png" alt={t("brand")} className="w-11 h-11 rounded-full object-cover" />
                         <span className="font-heading font-extrabold text-lg sm:text-xl text-forest leading-none">
                             {t("brand")}
                         </span>

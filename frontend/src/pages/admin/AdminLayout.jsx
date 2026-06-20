@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, Navigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Tags, Ticket, Truck, Users, BarChart3, LogOut, Leaf, Store } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Tags, Ticket, Truck, Users, BarChart3, LogOut, Store } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 
@@ -27,7 +27,7 @@ export default function AdminLayout() {
         <div className="min-h-screen bg-[#F4F5F7] flex" data-testid="admin-layout">
             <aside className="hidden md:flex w-60 flex-col bg-forest text-white fixed inset-y-0 start-0">
                 <div className="flex items-center gap-2 px-5 h-16 border-b border-white/10">
-                    <span className="grid place-items-center w-9 h-9 rounded-lg bg-white/15"><Leaf className="w-5 h-5" /></span>
+                    <img src="/faiha-logo.png" alt="Faiha" className="w-9 h-9 rounded-full object-cover bg-white" />
                     <span className="font-heading font-bold">Faiha Admin</span>
                 </div>
                 <nav className="flex-1 p-3 space-y-1 overflow-y-auto">

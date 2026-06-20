@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Leaf, Loader2, Lock } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ export default function AdminLogin() {
         <div className="min-h-screen grid place-items-center bg-[#F4F5F7] px-4" data-testid="admin-login-page">
             <div className="w-full max-w-sm">
                 <div className="flex items-center justify-center gap-2 mb-6">
-                    <span className="grid place-items-center w-11 h-11 rounded-xl bg-forest text-white"><Leaf className="w-6 h-6" /></span>
+                    <img src="/faiha-logo.png" alt="Faiha" className="w-11 h-11 rounded-full object-cover" />
                     <span className="font-heading font-extrabold text-xl text-forest">Faiha Admin</span>
                 </div>
                 <form onSubmit={submit} className="rounded-2xl bg-white border border-border p-7 space-y-4 shadow-sm">
