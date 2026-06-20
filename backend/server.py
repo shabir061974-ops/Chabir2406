@@ -267,6 +267,23 @@ async def get_products(
     items = [clean(d) for d in docs]
     for it in items:
         it["effective_price"] = _eff_price(it)
+
+    # Merge live Oracle PRODUCT_MASTER products (read-only, cached). Empty until the
+    # co-op populates PRODUCT_MASTER; appears automatically once data exists.
+    if not promo and not featured:
+        try:
+            ora = oracle_repo.list_products()
+            for op in ora:
+                if category and op["category"] != category:
+                    continue
+                if q:
+                    ql = q.lower()
+                    if ql not in (op["name_en"] or "").lower() and ql not in (op.get("barcode") or ""):
+                        continue
+                items.append(op)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Oracle merge error: %s", repr(e)[:120])
+
     if price_min is not None:
         items = [i for i in items if i["effective_price"] >= price_min]
     if price_max is not None:
@@ -286,12 +303,21 @@ async def get_products(
 
 @api.get("/products/{id_or_barcode}")
 async def get_product(id_or_barcode: str):
+    # Oracle product (id like "ora-<barcode>") or live barcode lookup
+    if id_or_barcode.startswith("ora-"):
+        op = oracle_repo.get_by_barcode(id_or_barcode[4:])
+        if op:
+            return op
+        raise HTTPException(status_code=404, detail="Product not found")
     doc = None
     if ObjectId.is_valid(id_or_barcode):
         doc = await db.products_local.find_one({"_id": ObjectId(id_or_barcode)})
     if not doc:
         doc = await db.products_local.find_one({"barcode": id_or_barcode})
     if not doc:
+        op = oracle_repo.get_by_barcode(id_or_barcode)
+        if op:
+            return op
         raise HTTPException(status_code=404, detail="Product not found")
     item = clean(doc)
     item["effective_price"] = _eff_price(item)
@@ -306,9 +332,14 @@ async def _validate_items(items):
     errors = []
     for it in items:
         prod = None
-        if ObjectId.is_valid(it.product_id):
+        is_oracle = (it.source == "oracle") or str(it.product_id).startswith("ora-")
+        if is_oracle and it.barcode:
+            prod = oracle_repo.get_by_barcode(it.barcode)
+            if prod:
+                prod = {**prod, "_id": prod["id"]}  # normalize for downstream
+        if prod is None and ObjectId.is_valid(it.product_id):
             prod = await db.products_local.find_one({"_id": ObjectId(it.product_id)})
-        if not prod and it.barcode:
+        if prod is None and it.barcode:
             prod = await db.products_local.find_one({"barcode": it.barcode})
         if not prod:
             errors.append({"product_id": it.product_id, "reason": "not_found"})
