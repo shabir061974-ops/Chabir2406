@@ -65,14 +65,14 @@ export const Header = ({ categories = [] }) => {
                 </div>
 
                 {/* category nav */}
-                <nav className="hidden md:flex items-center gap-6 h-11 text-sm font-medium text-muted-foreground overflow-x-auto">
-                    <Link to="/products" className="hover:text-forest whitespace-nowrap transition-colors" data-testid="nav-shop">{t("all_products")}</Link>
+                <nav className="flex items-center gap-3 sm:gap-6 h-11 text-sm font-medium text-muted-foreground overflow-x-auto pb-px -mx-4 px-4 md:mx-0 md:px-0 md:overflow-visible scrollbar-hide">
+                    <Link to="/products" className="hover:text-forest whitespace-nowrap transition-colors shrink-0" data-testid="nav-shop">{t("all_products")}</Link>
                     {categories.map((c) => (
-                        <Link key={c.id} to={`/category/${c.slug}`} className="hover:text-forest whitespace-nowrap transition-colors" data-testid={`nav-cat-${c.slug}`}>
+                        <Link key={c.id} to={`/category/${c.slug}`} className="hover:text-forest whitespace-nowrap transition-colors shrink-0" data-testid={`nav-cat-${c.slug}`}>
                             {ln(c)}
                         </Link>
                     ))}
-                    <Link to="/track" className="hover:text-forest whitespace-nowrap transition-colors ms-auto" data-testid="nav-track">{t("nav_track")}</Link>
+                    <Link to="/track" className="hover:text-forest whitespace-nowrap transition-colors ms-auto shrink-0 hidden sm:block" data-testid="nav-track">{t("nav_track")}</Link>
                 </nav>
             </div>
 

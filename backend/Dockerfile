@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 # System deps + Oracle Instant Client (x86_64) for thick-mode 11g connectivity
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libaio1 curl unzip ca-certificates \
+        libaio1t64 curl unzip ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Oracle Instant Client 19 (Basic Lite) for x86_64.
