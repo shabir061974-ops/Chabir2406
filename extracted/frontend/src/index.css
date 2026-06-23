@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Cairo:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 40 33% 98%;
+        --foreground: 0 0% 10%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 10%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 10%;
+        --primary: 147 56% 20%;
+        --primary-foreground: 40 33% 98%;
+        --secondary: 40 20% 94%;
+        --secondary-foreground: 147 56% 20%;
+        --muted: 40 20% 94%;
+        --muted-foreground: 0 0% 35%;
+        --accent: 14 67% 54%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 42%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 40 14% 89%;
+        --input: 40 14% 89%;
+        --ring: 147 56% 20%;
+        --radius: 0.85rem;
+    }
+}
+
+* {
+    border-color: hsl(var(--border));
+}
+
+body {
+    margin: 0;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Figtree', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.font-heading {
+    font-family: 'Outfit', sans-serif;
+}
+
+html[dir='rtl'] body {
+    font-family: 'Tajawal', sans-serif;
+}
+html[dir='rtl'] .font-heading {
+    font-family: 'Cairo', sans-serif;
+}
+
+code, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+::selection {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: hsl(147 20% 80%); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.5s ease-out both; }
+
+.glass {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
