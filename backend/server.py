@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, EmailStr
 from bson import ObjectId
 
 import oracle_repo
+import google_sheets_repo
 import seed_data
 
 # ----------------------------------------------------------------------------
@@ -218,7 +219,11 @@ def _eff_price(p):
 
 @api.get("/")
 async def root():
-    return {"message": "Faiha Co-operative API", "oracle": oracle_repo.is_available()}
+    return {
+        "message": "Faiha Co-operative API",
+        "oracle": oracle_repo.is_available(),
+        "google_sheets": google_sheets_repo.is_available()
+    }
 
 
 @api.get("/settings")
@@ -775,6 +780,29 @@ async def admin_audit_logs(admin: dict = Depends(require_admin)):
     return [clean(d) for d in docs]
 
 
+@api.get("/admin/sync/status")
+async def sync_status(admin: dict = Depends(require_admin)):
+    return {
+        "oracle_available": oracle_repo.is_available(),
+        "google_sheets_available": google_sheets_repo.is_available(),
+        "google_sheet_id": os.environ.get("GOOGLE_SHEET_ID", "not-configured"),
+    }
+
+
+@api.post("/admin/sync/oracle-to-sheets")
+async def sync_oracle_to_sheets(admin: dict = Depends(require_admin)):
+    if not google_sheets_repo.is_available():
+        raise HTTPException(status_code=503, detail="Google Sheets not available")
+    if not oracle_repo.is_available():
+        raise HTTPException(status_code=503, detail="Oracle not available")
+    try:
+        products = oracle_repo.list_products()
+        success = google_sheets_repo.sync_from_oracle(products)
+        return {"success": success, "products_synced": len(products) if success else 0}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Sync failed: {repr(e)[:100]}")
+
+
 # ============================== Startup ====================================
 
 app.include_router(api)
@@ -823,6 +851,7 @@ async def seed_catalog():
 @app.on_event("startup")
 async def startup():
     oracle_repo.init_pool()
+    google_sheets_repo.init_sheets()
     await db.users.create_index("email", unique=True)
     await db.orders.create_index("order_no", unique=True)
     await db.orders.create_index("placed_at")
@@ -836,4 +865,5 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     oracle_repo.close_pool()
+    google_sheets_repo.close()
     client.close()
