@@ -36,19 +36,22 @@ export default function Catalog() {
     });
 
     const cat = categories.find((c) => c.slug === slug);
-    const title = cat ? ln(cat) : promo ? t("on_sale") : featured ? t("featured") : q ? `“${q}”` : t("all_products");
+    const title = cat ? ln(cat) : promo ? t(“on_sale”) : featured ? t(“featured”) : q ? `”${q}”` : t(“all_products”);
+    const isCoffeeCategory = slug === “coffee”;
 
     const setSort = (v) => {
         const sp = new URLSearchParams(params);
-        sp.set("sort", v);
+        sp.set(“sort”, v);
         setParams(sp);
     };
 
     return (
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8" data-testid="catalog-page">
-            <div className="flex items-center justify-between gap-4 mb-6">
+        <div className=”mx-auto max-w-7xl px-4 sm:px-6 py-8” data-testid=”catalog-page”>
+            <div className=”flex items-center justify-between gap-4 mb-6”>
                 <div>
-                    <h1 className="font-heading font-bold text-3xl tracking-tight">{title}</h1>
+                    <h1 className={`font-heading font-bold text-3xl tracking-tight ${isCoffeeCategory ? “text-blue-600” : “”}`}>
+                        {title}
+                    </h1>
                     {data && <p className="text-sm text-muted-foreground mt-1">{data.total} {t("items")}</p>}
                 </div>
                 <div className="flex items-center gap-2">
