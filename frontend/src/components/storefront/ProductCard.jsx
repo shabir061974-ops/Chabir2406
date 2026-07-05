@@ -16,8 +16,21 @@ export const ProductCard = ({ product, index = 0 }) => {
     const img = (product.images || [])[0];
 
     const onAdd = () => {
+        if (soldOut) {
+            toast.error("Sorry, this item is not available in the requested quantity.");
+            return;
+        }
         addItem(product, 1);
         toast.success(`${ln(product)} ${t("added")}`);
+    };
+
+    const onIncrement = () => {
+        const newQty = qty + 1;
+        if (newQty > product.stock) {
+            toast.error("Sorry, this item is not available in the requested quantity.");
+            return;
+        }
+        updateQty(product.id, newQty);
     };
 
     return (
@@ -53,6 +66,9 @@ export const ProductCard = ({ product, index = 0 }) => {
                     </h3>
                 </Link>
                 <p className="text-xs text-muted-foreground">{ln({ name_en: product.unit_en, name_ar: product.unit_ar })}</p>
+                {!soldOut && product.stock < 10 && (
+                    <p className="text-xs text-terracotta font-semibold mt-1">Only {product.stock} left!</p>
+                )}
 
                 <div className="mt-2 flex items-end gap-2">
                     <span className="font-heading font-bold text-lg text-forest" data-testid="product-price">
@@ -75,7 +91,7 @@ export const ProductCard = ({ product, index = 0 }) => {
                                 <Minus className="w-4 h-4" />
                             </button>
                             <span className="font-bold font-mono" data-testid={`qty-val-${product.id}`}>{qty}</span>
-                            <button onClick={() => updateQty(product.id, qty + 1)} disabled={qty >= product.stock} className="grid place-items-center w-8 h-8 rounded-full hover:bg-white/15 disabled:opacity-40" data-testid={`qty-inc-${product.id}`}>
+                            <button onClick={onIncrement} disabled={qty >= product.stock} className="grid place-items-center w-8 h-8 rounded-full hover:bg-white/15 disabled:opacity-40" data-testid={`qty-inc-${product.id}`}>
                                 <Plus className="w-4 h-4" />
                             </button>
                         </div>
