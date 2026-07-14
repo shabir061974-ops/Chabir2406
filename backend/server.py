@@ -23,6 +23,9 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from bson import ObjectId
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 import oracle_repo
 import oracle_sync
@@ -43,6 +46,24 @@ CURRENCY = os.environ.get("CURRENCY", "KD")
 
 app = FastAPI(title="Faiha Co-operative E-Commerce API")
 api = APIRouter(prefix="/api")
+
+
+def _client_ip(request: Request) -> str:
+    """Real client IP behind the Caddy→nginx proxy chain (leftmost X-Forwarded-For)."""
+    xff = request.headers.get("x-forwarded-for")
+    return xff.split(",")[0].strip() if xff else get_remote_address(request)
+
+
+# Shared storage in the existing MongoDB so limits are enforced across ALL uvicorn workers
+# (in-memory would give each worker its own counter). No new service needed. Falls back to
+# in-memory if the store is ever unreachable, so rate limiting can never take the API down.
+try:
+    limiter = Limiter(key_func=_client_ip, storage_uri=mongo_url)
+except Exception as _e:  # noqa: BLE001
+    logger.warning("Rate-limit Mongo store unavailable (%s); using in-memory fallback.", repr(_e)[:120])
+    limiter = Limiter(key_func=_client_ip)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Directory where admin-uploaded product images are stored (persisted via docker volume).
 UPLOAD_DIR = ROOT_DIR / "uploads"
@@ -267,6 +288,29 @@ async def get_settings():
     }
 
 
+@api.get("/health")
+async def health():
+    """Lightweight liveness + DB probe for uptime monitoring and mobile connectivity checks."""
+    try:
+        await db.command("ping")
+        db_ok = True
+    except Exception:  # noqa: BLE001
+        db_ok = False
+    return {"status": "ok" if db_ok else "degraded", "db": db_ok, "time": now_iso()}
+
+
+@api.get("/app/config")
+async def app_config():
+    """Runtime config the mobile apps read on launch — lets you gate versions / pause without a store update."""
+    return {
+        "min_app_version": "1.0.0",
+        "maintenance": False,
+        "currency": CURRENCY,
+        "contact": {"whatsapp": "96590986000"},
+        "features": {"knet": False, "customer_accounts": False},
+    }
+
+
 @api.get("/categories")
 async def get_categories():
     # Dynamic + deterministic: active categories ordered by sort_order, then name (stable tie-break).
@@ -307,7 +351,8 @@ async def coupons_active():
 
 
 @api.post("/coupons/validate")
-async def validate_coupon(payload: CouponValidateIn):
+@limiter.limit("30/minute")
+async def validate_coupon(request: Request, payload: CouponValidateIn):
     """Validate a coupon code against the DB and return the discount, or an error message."""
     code = (payload.code or "").strip().upper()
     coupon = await db.coupons.find_one({"code": code}) if code else None
@@ -451,6 +496,7 @@ async def _apply_coupon(code, subtotal):
 
 
 @api.post("/checkout/place-order")
+@limiter.limit("15/minute")
 async def place_order(payload: PlaceOrderInput, request: Request):
     validated, errors = await _validate_items(payload.items)
     if errors:
@@ -577,7 +623,8 @@ async def track_order(order_no: str, phone: Optional[str] = None):
 # ============================== Auth =======================================
 
 @api.post("/auth/login")
-async def login(payload: LoginInput, response: Response):
+@limiter.limit("10/minute")
+async def login(request: Request, payload: LoginInput, response: Response):
     email = payload.email.lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
@@ -688,7 +735,8 @@ async def update_order_status(order_no: str, payload: StatusUpdateIn, request: R
 
 
 @api.post("/admin/upload")
-async def admin_upload_image(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+@limiter.limit("30/minute")
+async def admin_upload_image(request: Request, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Only JPG, PNG, WEBP or GIF images are allowed")
     data = await file.read()
