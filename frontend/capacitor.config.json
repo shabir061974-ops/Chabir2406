@@ -1,0 +1,8 @@
+{
+  "appId": "com.faihacoopkw.store",
+  "appName": "Faiha Store",
+  "webDir": "build",
+  "android": {
+    "allowMixedContent": true
+  }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEV ONLY: allows plain HTTP (cleartext) to the staging API server only.
+  Production release builds point at https://www.faihacoopkw.com (already HTTPS) and never
+  need this exception — Android blocks cleartext by default for every other domain.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">200.97.161.12</domain>
+    </domain-config>
+</network-security-config>
