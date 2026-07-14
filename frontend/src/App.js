@@ -3,8 +3,10 @@ import { Toaster } from "sonner";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { CustomerAuthProvider } from "@/context/CustomerAuthContext";
 
 import StoreLayout from "@/components/storefront/StoreLayout";
+import Account from "@/pages/account/Account";
 import Home from "@/pages/Home";
 import Catalog from "@/pages/Catalog";
 import ProductDetail from "@/pages/ProductDetail";
@@ -28,6 +30,7 @@ function App() {
     return (
         <LanguageProvider>
             <AuthProvider>
+              <CustomerAuthProvider>
                 <CartProvider>
                     <BrowserRouter>
                         <Toaster position="top-center" richColors />
@@ -41,6 +44,7 @@ function App() {
                                 <Route path="/checkout" element={<Checkout />} />
                                 <Route path="/order/:orderNo" element={<OrderConfirmation />} />
                                 <Route path="/track" element={<TrackOrder />} />
+                                <Route path="/account" element={<Account />} />
                             </Route>
                             <Route path="/payment/knet/:orderNo" element={<KnetPayment />} />
 
@@ -62,6 +66,7 @@ function App() {
                         </Routes>
                     </BrowserRouter>
                 </CartProvider>
+              </CustomerAuthProvider>
             </AuthProvider>
         </LanguageProvider>
     );

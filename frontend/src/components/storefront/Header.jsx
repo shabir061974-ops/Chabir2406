@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Globe, Menu, X, ClipboardList } from "lucide-react";
+import { Search, ShoppingCart, Globe, Menu, X, ClipboardList, User } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,10 @@ export const Header = ({ categories = [] }) => {
                             <Globe className="w-4 h-4" />
                             <span className="hidden sm:inline">{t("language")}</span>
                         </Button>
+                        <Link to="/account" data-testid="account-link" aria-label={t("my_account")}
+                            className="grid place-items-center w-9 h-9 rounded-full text-forest hover:bg-forest/[0.08] transition-colors">
+                            <User className="w-5 h-5" />
+                        </Link>
                         <Button variant="ghost" size="icon" onClick={() => setOpen(true)} data-testid="cart-button"
                             className="rounded-full relative text-forest">
                             <ShoppingCart className="w-5 h-5 rtl:-scale-x-100" />
@@ -119,6 +123,9 @@ export const Header = ({ categories = [] }) => {
                                 {ln(c)}
                             </NavLink>
                         ))}
+                        <NavLink to="/account" end onClick={() => setMenuOpen(false)} className={mobLink}>
+                            <User className="w-4 h-4 me-2" />{t("my_account")}
+                        </NavLink>
                         <NavLink to="/track" end onClick={() => setMenuOpen(false)} className={mobLink}>
                             <ClipboardList className="w-4 h-4 me-2" />{t("nav_track")}
                         </NavLink>
