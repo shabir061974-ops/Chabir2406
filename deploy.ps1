@@ -14,6 +14,8 @@ tar -czf $TARBALL `
   --exclude="backend/.venv" `
   --exclude=".git" `
   --exclude="frontend/build" `
+  --exclude="frontend/android" `
+  --exclude="frontend/ios" `
   --exclude="*/__pycache__" `
   --exclude="*.pack" `
   --exclude="*.zip" `
