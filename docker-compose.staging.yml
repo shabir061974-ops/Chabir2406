@@ -1,0 +1,29 @@
+# Isolated STAGING stack for mobile-app QA. Runs ALONGSIDE production and shares
+# nothing with it — own MongoDB, own volume, own network, own port. Reuses the
+# already-built production backend image (no rebuild, no restart of prod containers).
+#
+# Bring up:   docker compose -p faiha-staging -f docker-compose.staging.yml up -d
+# Tear down:  docker compose -p faiha-staging -f docker-compose.staging.yml down
+# Staging API: http://<vps-ip>:8010/api   (isolated data; safe to wipe anytime)
+services:
+  mongo-staging:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - staging_mongo_data:/data/db
+    networks: [faiha-staging]
+
+  backend-staging:
+    image: faiha-ecom-backend:latest      # reuse the production-built image (identical code)
+    restart: unless-stopped
+    env_file: ./backend/.env.staging
+    depends_on: [mongo-staging]
+    ports:
+      - "8010:8001"                        # staging API published on host port 8010
+    networks: [faiha-staging]
+
+volumes:
+  staging_mongo_data:
+
+networks:
+  faiha-staging:
