@@ -1,17 +1,37 @@
-import { useQuery } from "@tanstack/react-query";
-import { ShoppingCart, Banknote, Clock, Package } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ShoppingCart, Banknote, Clock, Package, DatabaseBackup } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import { formatKD } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 const COLORS = ["#164E2E", "#D95D39", "#F59E0B", "#3B82F6", "#8B5CF6"];
+const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 export default function Dashboard() {
+    const qc = useQueryClient();
+    const [backing, setBacking] = useState(false);
     const { data, isLoading } = useQuery({
         queryKey: ["admin-summary"],
         queryFn: async () => (await api.get("/admin/dashboard/summary")).data,
     });
+    const { data: backup } = useQuery({ queryKey: ["backup-status"], queryFn: async () => (await api.get("/admin/backup/status")).data });
+
+    const doBackup = async () => {
+        setBacking(true);
+        try {
+            await api.post("/admin/backup/now");
+            toast.success("Backup created");
+            qc.invalidateQueries({ queryKey: ["backup-status"] });
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Backup failed");
+        } finally {
+            setBacking(false);
+        }
+    };
 
     if (isLoading || !data) return <div className="grid sm:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>;
 
@@ -87,6 +107,26 @@ export default function Dashboard() {
                             {data.recent_orders.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">No orders yet</td></tr>}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-border p-5">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                        <h2 className="font-heading font-semibold flex items-center gap-2"><DatabaseBackup className="w-5 h-5 text-forest" /> Backup</h2>
+                        {backup?.last_backup?.at ? (
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Last backup: {new Date(backup.last_backup.at).toLocaleString()} ({backup.last_backup.trigger})
+                                {typeof backup.last_backup.db_size === "number" && ` · DB ${fmtSize(backup.last_backup.db_size)}`}
+                                {typeof backup.last_backup.uploads_size === "number" && ` · images ${fmtSize(backup.last_backup.uploads_size)}`}
+                            </p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground mt-1">Runs automatically every night at 3 AM. No manual backup yet.</p>
+                        )}
+                    </div>
+                    <Button onClick={doBackup} disabled={backing} variant="outline" data-testid="backup-now-button" className="rounded-full gap-1.5">
+                        <DatabaseBackup className={`w-4 h-4 ${backing ? "animate-pulse" : ""}`} /> {backing ? "Backing up…" : "Backup Now"}
+                    </Button>
                 </div>
             </div>
         </div>

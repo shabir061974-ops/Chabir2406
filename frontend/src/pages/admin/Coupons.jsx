@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
-const empty = { code: "", type: "percent", value: 10, usage_limit: 1000, is_active: true };
+const empty = { code: "", type: "percent", value: 10, usage_limit: 1000, is_active: true, expires_at: "" };
 
 export default function Coupons() {
     const qc = useQueryClient();
@@ -21,7 +21,7 @@ export default function Coupons() {
 
     const save = async () => {
         try {
-            await api.post("/admin/coupons", { ...form, value: Number(form.value), usage_limit: Number(form.usage_limit) });
+            await api.post("/admin/coupons", { ...form, value: Number(form.value), usage_limit: Number(form.usage_limit), expires_at: form.expires_at || null });
             toast.success("Coupon created");
             setOpen(false); setForm(empty);
             qc.invalidateQueries({ queryKey: ["admin-coupons"] });
@@ -46,7 +46,7 @@ export default function Coupons() {
                     <div key={c.id} className="rounded-2xl bg-white border border-border p-5 flex items-center justify-between" data-testid={`coupon-${c.code}`}>
                         <div>
                             <div className="flex items-center gap-2"><Ticket className="w-4 h-4 text-terracotta" /><span className="font-heading font-bold text-lg font-mono">{c.code}</span></div>
-                            <p className="text-sm text-muted-foreground mt-1">{c.type === "percent" ? `${c.value}% off` : `KD ${Number(c.value).toFixed(3)} off`} · used {c.used_count}/{c.usage_limit}</p>
+                            <p className="text-sm text-muted-foreground mt-1">{c.type === "percent" ? `${c.value}% off` : `KD ${Number(c.value).toFixed(3)} off`} · used {c.used_count}/{c.usage_limit}{c.expires_at ? ` · expires ${String(c.expires_at).slice(0, 10)}` : ""}</p>
                         </div>
                         <button onClick={() => remove(c.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -67,6 +67,7 @@ export default function Coupons() {
                         </div>
                         <div><Label className="text-xs mb-1 block text-muted-foreground">Value</Label><Input data-testid="coupon-value" type="number" step="0.001" value={form.value} onChange={(e) => set("value", e.target.value)} /></div>
                         <div><Label className="text-xs mb-1 block text-muted-foreground">Usage Limit</Label><Input type="number" value={form.usage_limit} onChange={(e) => set("usage_limit", e.target.value)} /></div>
+                        <div><Label className="text-xs mb-1 block text-muted-foreground">Expiry Date (optional — leave blank for no expiry)</Label><Input data-testid="coupon-expiry" type="date" value={form.expires_at || ""} onChange={(e) => set("expires_at", e.target.value)} /></div>
                     </div>
                     <DialogFooter><Button onClick={save} data-testid="save-coupon" className="bg-forest hover:bg-forest-dark rounded-full">Save</Button></DialogFooter>
                 </DialogContent>

@@ -26,7 +26,7 @@ export const Footer = () => {
                     <h4 className="font-heading font-semibold mb-3">Contact</h4>
                     <ul className="space-y-2 text-sm text-white/70">
                         <li className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Faiha, Kuwait</li>
-                        <li className="flex items-center gap-2"><Phone className="w-4 h-4" /> +965 0000 0000</li>
+                        <li className="flex items-center gap-2"><Phone className="w-4 h-4" /> +965 1861000</li>
                     </ul>
                 </div>
                 <div>

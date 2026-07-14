@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { CartDrawer } from "./CartDrawer";
+import { WhatsAppButton } from "./WhatsAppButton";
 
 export default function StoreLayout() {
     const { data: categories = [] } = useQuery({
@@ -19,6 +20,7 @@ export default function StoreLayout() {
             </main>
             <Footer />
             <CartDrawer />
+            <WhatsAppButton />
         </div>
     );
 }

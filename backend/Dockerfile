@@ -2,8 +2,12 @@
 FROM python:3.11-slim
 
 # System deps + Oracle Instant Client (x86_64) for thick-mode 11g connectivity
+# Debian 13 (trixie) ships libaio as libaio.so.1t64; the Oracle client needs libaio.so.1,
+# so symlink it. (Without this, oracledb thick mode fails with DPI-1047.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libaio1t64 curl unzip ca-certificates \
+    && ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1 \
+    && ldconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Oracle Instant Client 19 (Basic Lite) for x86_64.
@@ -16,6 +20,11 @@ RUN mkdir -p /opt/oracle \
     && ldconfig
 
 ENV ORA_CLIENT_LIB=/opt/oracle/instantclient_19_28
+
+# MongoDB Database Tools (mongodump) — powers the on-demand "Backup Now" button in the admin.
+RUN curl -sL -o /tmp/mdbtools.deb "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.10.0.deb" \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/mdbtools.deb \
+    && rm -f /tmp/mdbtools.deb && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt .

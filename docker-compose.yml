@@ -15,6 +15,11 @@ services:
     restart: unless-stopped
     env_file: ./backend/.env
     depends_on: [mongo]
+    volumes:
+      # Product images live in a plain ./uploads folder next to the app (easy to browse via SFTP).
+      - ./uploads:/app/uploads
+      # Shared backup dir so the admin "Backup Now" button writes alongside the nightly cron backups.
+      - ../mongo-backups:/backups
     networks: [faiha]
     # backend listens on 8001 internally; exposed through the frontend nginx proxy
 
@@ -23,16 +28,29 @@ services:
       context: ./frontend
       args:
         # Public URL where the app is served (your domain). API is reached at <this>/api
-        REACT_APP_BACKEND_URL: "https://your-domain.com"
+        REACT_APP_BACKEND_URL: "https://www.faihacoopkw.com"
     restart: unless-stopped
     depends_on: [backend]
+    networks: [faiha]
+    # No host ports: Caddy (below) fronts the app on 80/443 and terminates TLS.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [frontend]
     ports:
       - "80:80"
-      # - "443:443"   # add after you set up TLS (see DEPLOY_HOSTINGER.md)
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     networks: [faiha]
 
 volumes:
   mongo_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   faiha:

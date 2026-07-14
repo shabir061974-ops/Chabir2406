@@ -9,8 +9,6 @@ import { formatKD } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
 export default function Checkout() {
@@ -20,12 +18,14 @@ export default function Checkout() {
 
     const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: async () => (await api.get("/settings")).data });
     const delivery = settings?.delivery || {};
+    // Only show the coupon box when at least one usable coupon is configured in the admin.
+    const { data: couponMeta } = useQuery({ queryKey: ["coupons-active"], queryFn: async () => (await api.get("/coupons/active")).data });
 
-    const [form, setForm] = useState({ name: "", phone: "", email: "", address: "", area: "", notes: "" });
-    const [payment, setPayment] = useState("COD");
-    const [slot, setSlot] = useState("");
+    const [form, setForm] = useState({ name: "", phone: "", email: "" });
+    const [payment, setPayment] = useState("Cash");
     const [coupon, setCoupon] = useState("");
     const [appliedCoupon, setAppliedCoupon] = useState(null);
+    const [couponError, setCouponError] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -38,31 +38,45 @@ export default function Checkout() {
     const total = Math.max(0, subtotal - discountAmt + deliveryCharge);
 
     const applyCoupon = async () => {
-        if (!coupon.trim()) return;
+        const code = coupon.trim();
+        if (!code) return;
         try {
-            // validate via place flow preview using settings list isn't available; do a soft check by attempting known coupon
-            const code = coupon.trim().toUpperCase();
-            setAppliedCoupon({ code, type: "percent", value: 10 }); // optimistic; backend recomputes authoritatively
-            toast.success(`${t("coupon")}: ${code}`);
+            const { data } = await api.post("/coupons/validate", { code, subtotal });
+            if (data.valid) {
+                setAppliedCoupon({ code: data.code, type: data.type, value: data.value });
+                setCouponError("");
+                toast.success(t("coupon_applied"));
+            } else {
+                setAppliedCoupon(null);
+                setCouponError(t("coupon_invalid"));
+                toast.error(t("coupon_invalid"));
+            }
         } catch (e) {
-            toast.error(formatApiError(e.response?.data?.detail));
+            setAppliedCoupon(null);
+            setCouponError(t("coupon_invalid"));
+            toast.error(t("coupon_invalid"));
         }
     };
 
+    const removeCoupon = () => {
+        setAppliedCoupon(null);
+        setCoupon("");
+        setCouponError("");
+    };
+
     const placeOrder = async () => {
-        if (!form.name || !form.phone || !form.address || !form.area) {
-            toast.error(t("delivery_details"));
+        if (!form.name || !form.phone) {
+            toast.error(t("enter_name_phone"));
             return;
         }
         if (items.length === 0) return;
         setSubmitting(true);
         try {
             const payload = {
-                items: items.map((i) => ({ product_id: i.product_id, barcode: i.barcode, name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source })),
-                customer: form,
+                items: items.map((i) => ({ product_id: i.product_id, barcode: i.barcode != null ? String(i.barcode) : null, name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source })),
+                customer: { name: form.name, phone: form.phone, email: form.email || null },
                 payment_method: payment,
                 coupon_code: appliedCoupon?.code || null,
-                delivery_slot: slot || null,
                 lang,
             };
             const { data } = await api.post("/checkout/place-order", payload);
@@ -97,27 +111,13 @@ export default function Checkout() {
             <h1 className="font-heading font-bold text-3xl tracking-tight mb-8">{t("checkout")}</h1>
             <div className="grid lg:grid-cols-[1fr_380px] gap-8">
                 <div className="space-y-8">
-                    {/* delivery */}
+                    {/* customer */}
                     <section className="rounded-2xl bg-white border border-border p-6">
-                        <h2 className="font-heading font-semibold text-xl mb-5">{t("delivery_details")}</h2>
+                        <h2 className="font-heading font-semibold text-xl mb-5">{t("customer_details")}</h2>
                         <div className="grid sm:grid-cols-2 gap-4">
                             <Field label={t("full_name")}><Input data-testid="checkout-name" value={form.name} onChange={set("name")} /></Field>
                             <Field label={t("phone")}><Input data-testid="checkout-phone" value={form.phone} onChange={set("phone")} /></Field>
-                            <Field label={t("email")}><Input data-testid="checkout-email" value={form.email} onChange={set("email")} /></Field>
-                            <Field label={t("area")}><Input data-testid="checkout-area" value={form.area} onChange={set("area")} /></Field>
-                            <div className="sm:col-span-2"><Field label={t("address")}><Input data-testid="checkout-address" value={form.address} onChange={set("address")} /></Field></div>
-                            {delivery.time_slots?.length > 0 && (
-                                <div className="sm:col-span-2">
-                                    <Label className="text-sm mb-1.5 block">{t("delivery_slot")}</Label>
-                                    <Select value={slot} onValueChange={setSlot}>
-                                        <SelectTrigger data-testid="checkout-slot"><SelectValue placeholder={t("delivery_slot")} /></SelectTrigger>
-                                        <SelectContent>
-                                            {delivery.time_slots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                            <div className="sm:col-span-2"><Field label={t("notes")}><Textarea data-testid="checkout-notes" value={form.notes} onChange={set("notes")} rows={2} /></Field></div>
+                            <div className="sm:col-span-2"><Field label={t("email")}><Input data-testid="checkout-email" value={form.email} onChange={set("email")} /></Field></div>
                         </div>
                     </section>
 
@@ -125,8 +125,8 @@ export default function Checkout() {
                     <section className="rounded-2xl bg-white border border-border p-6">
                         <h2 className="font-heading font-semibold text-xl mb-5">{t("payment_method")}</h2>
                         <div className="grid sm:grid-cols-2 gap-3">
-                            <PaymentOption active={payment === "COD"} onClick={() => setPayment("COD")} icon={Banknote} title={t("cod")} desc={t("cod_desc")} testid="pay-cod" />
-                            <PaymentOption active={payment === "KNET"} onClick={() => setPayment("KNET")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />
+                            <PaymentOption active={payment === "Cash"} onClick={() => setPayment("Cash")} icon={Banknote} title={t("cod")} desc={t("cod_desc")} testid="pay-cod" />
+                            <PaymentOption active={false} disabled note={t("temporarily_unavailable")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />
                         </div>
                     </section>
                 </div>
@@ -138,19 +138,39 @@ export default function Checkout() {
                         {items.map((i) => (
                             <div key={i.product_id} className="flex items-center gap-3 text-sm">
                                 <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{i.image && <img src={i.image} alt="" className="w-full h-full object-cover" />}</div>
-                                <span className="flex-1 line-clamp-1">{ln(i)} × {i.qty}</span>
+                                <div className="flex-1 min-w-0">
+                                    {/* Bold product name; quantity is kept internally but not shown to the customer. */}
+                                    <p className="font-bold line-clamp-1">{ln(i)}</p>
+                                    <p className="text-xs text-muted-foreground">{formatKD(i.unit_price)}</p>
+                                </div>
                                 <span className="font-semibold whitespace-nowrap">{formatKD(i.unit_price * i.qty)}</span>
                             </div>
                         ))}
                     </div>
 
-                    <div className="flex gap-2 mb-4">
-                        <div className="relative flex-1">
-                            <Tag className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted-foreground" />
-                            <Input data-testid="coupon-input" value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder={t("coupon")} className="ps-9" />
+                    {/* Coupon box appears only when the admin has at least one usable coupon configured. */}
+                    {couponMeta?.has_active && (
+                        <div className="mb-4">
+                            {appliedCoupon ? (
+                                <div className="flex items-center justify-between gap-2 rounded-lg border border-forest/30 bg-forest/5 px-3 py-2" data-testid="coupon-applied">
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-forest"><Tag className="w-4 h-4" /> {appliedCoupon.code}</span>
+                                    <button type="button" onClick={removeCoupon} data-testid="remove-coupon" className="text-xs text-muted-foreground hover:text-destructive">{t("remove")}</button>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Tag className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted-foreground" />
+                                        <Input data-testid="coupon-input" value={coupon}
+                                            onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }}
+                                            onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                                            placeholder={t("coupon")} className="ps-9" />
+                                    </div>
+                                    <Button variant="outline" onClick={applyCoupon} data-testid="apply-coupon">{t("apply")}</Button>
+                                </div>
+                            )}
+                            {couponError && <p className="mt-1.5 text-xs text-destructive" data-testid="coupon-error">{couponError}</p>}
                         </div>
-                        <Button variant="outline" onClick={applyCoupon} data-testid="apply-coupon">{t("apply")}</Button>
-                    </div>
+                    )}
 
                     <div className="space-y-2 text-sm border-t border-border pt-4">
                         <Row label={t("subtotal")} value={formatKD(subtotal)} />
@@ -180,11 +200,20 @@ const Field = ({ label, children }) => (
 const Row = ({ label, value, accent }) => (
     <div className="flex justify-between"><span className="text-muted-foreground">{label}</span><span className={accent ? "text-terracotta font-semibold" : "font-medium"}>{value}</span></div>
 );
-const PaymentOption = ({ active, onClick, icon: Icon, title, desc, testid }) => (
-    <button onClick={onClick} data-testid={testid} type="button"
-        className={`text-start rounded-xl border-2 p-4 transition-all ${active ? "border-forest bg-forest/5" : "border-border hover:border-forest/40"}`}>
-        <Icon className={`w-6 h-6 mb-2 ${active ? "text-forest" : "text-muted-foreground"}`} />
+const PaymentOption = ({ active, onClick, icon: Icon, title, desc, testid, disabled, note }) => (
+    <button onClick={disabled ? undefined : onClick} data-testid={testid} type="button" disabled={disabled} aria-disabled={disabled}
+        className={`relative text-start rounded-xl border-2 p-4 transition-all ${
+            disabled
+                ? "border-border bg-muted/40 opacity-60 cursor-not-allowed"
+                : active
+                ? "border-forest bg-forest/5"
+                : "border-border hover:border-forest/40"
+        }`}>
+        <Icon className={`w-6 h-6 mb-2 ${active && !disabled ? "text-forest" : "text-muted-foreground"}`} />
         <p className="font-semibold">{title}</p>
         <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+        {disabled && note && (
+            <span className="mt-2 inline-block text-[11px] font-medium text-terracotta">{note}</span>
+        )}
     </button>
 );

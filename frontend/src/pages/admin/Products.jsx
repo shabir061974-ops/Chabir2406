@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, X, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { formatKD } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,50 @@ export default function Products() {
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState(empty);
     const [editId, setEditId] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     const { data: products = [] } = useQuery({ queryKey: ["admin-products"], queryFn: async () => (await api.get("/admin/products")).data });
-    const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get("/categories")).data });
+    // Admin can assign a product to ANY category (active or not), so load the full admin list.
+    const { data: categories = [] } = useQuery({ queryKey: ["admin-categories"], queryFn: async () => (await api.get("/admin/categories")).data });
+    const { data: syncStatus } = useQuery({ queryKey: ["sync-status"], queryFn: async () => (await api.get("/admin/sync/status")).data });
+
+    const syncOracle = async () => {
+        setSyncing(true);
+        try {
+            const { data } = await api.post("/admin/sync/oracle-to-mongo");
+            toast.success(`Synced ${data.synced} products from Oracle`);
+            qc.invalidateQueries({ queryKey: ["admin-products"] });
+            qc.invalidateQueries({ queryKey: ["sync-status"] });
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Oracle sync failed");
+        } finally {
+            setSyncing(false);
+        }
+    };
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+    const uploadImage = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // allow re-selecting the same file later
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        setUploading(true);
+        try {
+            const { data } = await api.post("/admin/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+            setForm((f) => {
+                const current = Array.isArray(f.images) ? f.images : String(f.images || "").split(",").map((s) => s.trim()).filter(Boolean);
+                return { ...f, images: [...current, data.url] };
+            });
+            toast.success("Image uploaded");
+        } catch (err) {
+            toast.error("Upload failed");
+        } finally {
+            setUploading(false);
+        }
+    };
     const openNew = () => { setForm(empty); setEditId(null); setOpen(true); };
     const openEdit = (p) => { setForm({ ...empty, ...p }); setEditId(p.id); setOpen(true); };
 
@@ -47,8 +86,20 @@ export default function Products() {
     return (
         <div className="space-y-5" data-testid="admin-products">
             <div className="flex items-center justify-between">
-                <h1 className="font-heading font-bold text-2xl">Products</h1>
-                <Button onClick={openNew} data-testid="add-product-button" className="rounded-full bg-forest hover:bg-forest-dark gap-1.5"><Plus className="w-4 h-4" /> Add Product</Button>
+                <div>
+                    <h1 className="font-heading font-bold text-2xl">Products</h1>
+                    {syncStatus?.last_oracle_sync?.at && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            Last Oracle sync: {new Date(syncStatus.last_oracle_sync.at).toLocaleString()} · {syncStatus.last_oracle_sync.synced} products
+                        </p>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={syncOracle} disabled={syncing} variant="outline" data-testid="sync-oracle-button" className="rounded-full gap-1.5">
+                        <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync from Oracle"}
+                    </Button>
+                    <Button onClick={openNew} data-testid="add-product-button" className="rounded-full bg-forest hover:bg-forest-dark gap-1.5"><Plus className="w-4 h-4" /> Add Product</Button>
+                </div>
             </div>
 
             <div className="rounded-2xl bg-white border border-border overflow-hidden">
@@ -90,7 +141,13 @@ export default function Products() {
                         <Fld label="Category">
                             <Select value={form.category} onValueChange={(v) => set("category", v)}>
                                 <SelectTrigger data-testid="prod-category"><SelectValue placeholder="Select" /></SelectTrigger>
-                                <SelectContent>{categories.map((c) => <SelectItem key={c.id} value={c.slug}>{c.name_en}</SelectItem>)}</SelectContent>
+                                <SelectContent>
+                                    {/* Keep the product's current category selectable even if it isn't an active category (e.g. Oracle "uncategorized"). */}
+                                    {form.category && !categories.some((c) => c.slug === form.category) && (
+                                        <SelectItem value={form.category}>{form.category}</SelectItem>
+                                    )}
+                                    {categories.map((c) => <SelectItem key={c.id} value={c.slug}>{c.name_en}{c.is_active === false ? " (inactive)" : ""}</SelectItem>)}
+                                </SelectContent>
                             </Select>
                         </Fld>
                         <Fld label="Barcode"><Input value={form.barcode || ""} onChange={(e) => set("barcode", e.target.value)} /></Fld>
@@ -98,7 +155,27 @@ export default function Products() {
                         <Fld label="Stock"><Input data-testid="prod-stock" type="number" value={form.stock} onChange={(e) => set("stock", e.target.value)} /></Fld>
                         <Fld label="Unit (EN)"><Input value={form.unit_en} onChange={(e) => set("unit_en", e.target.value)} /></Fld>
                         <Fld label="Discount %"><Input type="number" value={form.discount} onChange={(e) => set("discount", e.target.value)} /></Fld>
-                        <div className="col-span-2"><Fld label="Image URL"><Input data-testid="prod-image" value={Array.isArray(form.images) ? form.images.join(", ") : form.images} onChange={(e) => set("images", e.target.value)} /></Fld></div>
+                        <div className="col-span-2">
+                            <Fld label="Images">
+                                <div className="flex gap-2">
+                                    <Input data-testid="prod-image" placeholder="Image URL(s), comma-separated" value={Array.isArray(form.images) ? form.images.join(", ") : form.images} onChange={(e) => set("images", e.target.value)} />
+                                    <label className={`shrink-0 inline-flex items-center gap-1.5 px-3 rounded-md border border-border text-sm cursor-pointer hover:bg-secondary ${uploading ? "opacity-60 pointer-events-none" : ""}`}>
+                                        <Upload className="w-4 h-4" /> {uploading ? "Uploading…" : "Upload"}
+                                        <input type="file" accept="image/*" className="hidden" onChange={uploadImage} data-testid="prod-image-upload" />
+                                    </label>
+                                </div>
+                                {(Array.isArray(form.images) ? form.images : String(form.images || "").split(",").map((s) => s.trim()).filter(Boolean)).length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {(Array.isArray(form.images) ? form.images : String(form.images || "").split(",").map((s) => s.trim()).filter(Boolean)).map((url, i) => (
+                                            <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden border border-border bg-secondary group">
+                                                <img src={url} alt="" className="w-full h-full object-cover" />
+                                                <button type="button" onClick={() => { const list = (Array.isArray(form.images) ? form.images : String(form.images || "").split(",").map((s) => s.trim()).filter(Boolean)); set("images", list.filter((_, j) => j !== i)); }} className="absolute top-0.5 end-0.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"><X className="w-3 h-3" /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </Fld>
+                        </div>
                         <label className="flex items-center gap-2 text-sm"><Switch checked={form.is_featured} onCheckedChange={(v) => set("is_featured", v)} /> Featured</label>
                         <label className="flex items-center gap-2 text-sm"><Switch checked={form.is_promotional} onCheckedChange={(v) => set("is_promotional", v)} /> On Sale</label>
                     </div>

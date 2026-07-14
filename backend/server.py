@@ -8,18 +8,24 @@ import logging
 import uuid
 import secrets
 import random
-from datetime import datetime, timezone, timedelta
+import asyncio
+import subprocess
+from io import BytesIO
+from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query
+from PIL import Image
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query, UploadFile, File
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from bson import ObjectId
 
 import oracle_repo
+import oracle_sync
 import google_sheets_repo
 import seed_data
 
@@ -37,6 +43,17 @@ CURRENCY = os.environ.get("CURRENCY", "KD")
 
 app = FastAPI(title="Faiha Co-operative E-Commerce API")
 api = APIRouter(prefix="/api")
+
+# Directory where admin-uploaded product images are stored (persisted via docker volume).
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB (raw upload before optimization)
+MAX_IMAGE_DIM = 1200                # longest edge after resize (px)
+WEBP_QUALITY = 82                   # good quality / small size balance
+
+# On-demand backups land here — bind-mounted to the host /root/mongo-backups (shared with the nightly cron).
+BACKUP_DIR = Path("/backups")
 
 # ============================== Helpers ====================================
 
@@ -132,6 +149,9 @@ class LoginInput(BaseModel):
 
 
 class CartItemIn(BaseModel):
+    # Coerce numeric barcodes (e.g. Coffee items like 79970003) to string so the
+    # order request is not rejected by strict string validation.
+    model_config = ConfigDict(coerce_numbers_to_str=True)
     product_id: str
     barcode: Optional[str] = None
     name: str
@@ -144,8 +164,10 @@ class CustomerInfo(BaseModel):
     name: str
     phone: str
     email: Optional[str] = None
-    address: str
-    area: str
+    # Delivery address/area are no longer collected at checkout; kept optional
+    # for backward compatibility with older orders/clients.
+    address: Optional[str] = ""
+    area: Optional[str] = ""
     notes: Optional[str] = None
 
 
@@ -164,6 +186,8 @@ class KnetCallbackInput(BaseModel):
 
 
 class ProductIn(BaseModel):
+    # Google-Sheets-synced products may carry numeric barcodes/values; accept and coerce to str.
+    model_config = ConfigDict(coerce_numbers_to_str=True)
     name_en: str
     name_ar: str
     category: str
@@ -194,6 +218,12 @@ class CouponIn(BaseModel):
     value: float
     usage_limit: int = 1000
     is_active: bool = True
+    expires_at: Optional[str] = None  # inclusive last valid day, ISO date "YYYY-MM-DD"; None = never expires
+
+
+class CouponValidateIn(BaseModel):
+    code: str
+    subtotal: float = 0
 
 
 class DeliveryConfigIn(BaseModel):
@@ -239,8 +269,58 @@ async def get_settings():
 
 @api.get("/categories")
 async def get_categories():
-    cats = await db.categories.find({"is_active": True}).sort("sort_order", 1).to_list(100)
+    # Dynamic + deterministic: active categories ordered by sort_order, then name (stable tie-break).
+    cats = await db.categories.find({"is_active": True}).sort([("sort_order", 1), ("name_en", 1)]).to_list(100)
     return [clean(c) for c in cats]
+
+
+# ------------------------------- Coupons ----------------------------------
+
+def _coupon_ok(coupon):
+    """Returns (ok, reason). A coupon is usable only if active, not expired, and not used up."""
+    if not coupon.get("is_active", True):
+        return False, "inactive"
+    exp = coupon.get("expires_at")
+    if exp and date.today().isoformat() > str(exp)[:10]:
+        return False, "expired"
+    if coupon.get("used_count", 0) >= coupon.get("usage_limit", 1000):
+        return False, "used_up"
+    return True, "ok"
+
+
+def _coupon_discount(coupon, subtotal):
+    subtotal = max(0.0, subtotal or 0.0)
+    if coupon["type"] == "percent":
+        return round(subtotal * coupon["value"] / 100, 3)
+    return round(min(coupon["value"], subtotal), 3)
+
+
+@api.get("/coupons/active")
+async def coupons_active():
+    """Whether any usable coupon exists — the storefront hides the coupon box when none do."""
+    count = 0
+    async for c in db.coupons.find({"is_active": True}):
+        ok, _ = _coupon_ok(c)
+        if ok:
+            count += 1
+    return {"has_active": count > 0, "count": count}
+
+
+@api.post("/coupons/validate")
+async def validate_coupon(payload: CouponValidateIn):
+    """Validate a coupon code against the DB and return the discount, or an error message."""
+    code = (payload.code or "").strip().upper()
+    coupon = await db.coupons.find_one({"code": code}) if code else None
+    if not coupon or not _coupon_ok(coupon)[0]:
+        return {"valid": False, "message": "Invalid or expired coupon."}
+    return {
+        "valid": True,
+        "code": code,
+        "type": coupon["type"],
+        "value": coupon["value"],
+        "discount": _coupon_discount(coupon, payload.subtotal),
+        "message": "Coupon applied",
+    }
 
 
 @api.get("/products")
@@ -273,21 +353,14 @@ async def get_products(
     for it in items:
         it["effective_price"] = _eff_price(it)
 
-    # Merge live Oracle PRODUCT_MASTER products (read-only, cached). Empty until the
-    # co-op populates PRODUCT_MASTER; appears automatically once data exists.
-    if not promo and not featured:
-        try:
-            ora = oracle_repo.list_products()
-            for op in ora:
-                if category and op["category"] != category:
-                    continue
-                if q:
-                    ql = q.lower()
-                    if ql not in (op["name_en"] or "").lower() and ql not in (op.get("barcode") or ""):
-                        continue
-                items.append(op)
-        except Exception as e:  # noqa: BLE001
-            logger.error("Oracle merge error: %s", repr(e)[:120])
+    # Oracle PRODUCT_MASTER products are materialized into products_local by the nightly
+    # oracle_sync job (source='oracle'), so they're already in `docs` above — no live merge here.
+
+    # Restrict listings to categories that are currently enabled (is_active).
+    # This scopes "All Products" (and every listing) to the active launch categories;
+    # enabling a category in the DB automatically surfaces its products — no code change.
+    active_slugs = {c["slug"] for c in await db.categories.find({"is_active": True}, {"slug": 1}).to_list(500)}
+    items = [i for i in items if i.get("category") in active_slugs]
 
     if price_min is not None:
         items = [i for i in items if i["effective_price"] >= price_min]
@@ -371,16 +444,10 @@ async def validate_stock(payload: PlaceOrderInput):
 async def _apply_coupon(code, subtotal):
     if not code:
         return 0, None
-    coupon = await db.coupons.find_one({"code": code.upper(), "is_active": True})
-    if not coupon:
+    coupon = await db.coupons.find_one({"code": code.upper()})
+    if not coupon or not _coupon_ok(coupon)[0]:
         return 0, None
-    if coupon.get("used_count", 0) >= coupon.get("usage_limit", 1000):
-        return 0, None
-    if coupon["type"] == "percent":
-        amt = round(subtotal * coupon["value"] / 100, 3)
-    else:
-        amt = round(min(coupon["value"], subtotal), 3)
-    return amt, coupon
+    return _coupon_discount(coupon, subtotal), coupon
 
 
 @api.post("/checkout/place-order")
@@ -422,11 +489,13 @@ async def place_order(payload: PlaceOrderInput, request: Request):
 
     net_payable = round(subtotal - discount_amount + delivery_charge, 3)
 
-    pm = payload.payment_method.upper()
+    # Only Cash is accepted right now. KNET is temporarily disabled.
+    pm_raw = payload.payment_method.upper()
+    if pm_raw == "KNET":
+        raise HTTPException(status_code=400, detail={"message": "knet_unavailable"})
+    pm = "Cash"  # normalize COD/CASH -> Cash
     payment_status = "pending"
-    order_status = "pending"
-    if pm == "COD":
-        order_status = "confirmed"
+    order_status = "confirmed"
 
     order_no = gen_order_no()
     while await db.orders.find_one({"order_no": order_no}):
@@ -618,10 +687,46 @@ async def update_order_status(order_no: str, payload: StatusUpdateIn, request: R
     return clean(order)
 
 
+@api.post("/admin/upload")
+async def admin_upload_image(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WEBP or GIF images are allowed")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image is too large (max 8 MB)")
+    try:
+        img = Image.open(BytesIO(data))
+        img.load()
+    except Exception:
+        raise HTTPException(status_code=400, detail="File is not a valid image")
+    # Keep transparency where present, otherwise flatten to RGB.
+    img = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+    # Shrink oversized photos to fit within MAX_IMAGE_DIM (never upscales small images).
+    img.thumbnail((MAX_IMAGE_DIM, MAX_IMAGE_DIM), Image.LANCZOS)
+    fname = f"{uuid.uuid4().hex}.webp"
+    buf = BytesIO()
+    img.save(buf, format="WEBP", quality=WEBP_QUALITY, method=6)
+    (UPLOAD_DIR / fname).write_bytes(buf.getvalue())
+    # Relative URL served by StaticFiles below; same-origin in production so <img src> just works.
+    return {"url": f"/api/uploads/{fname}"}
+
+
 @api.get("/admin/products")
 async def admin_list_products(admin: dict = Depends(require_admin)):
     docs = await db.products_local.find({}).to_list(2000)
     return [clean(d) for d in docs]
+
+
+async def _persist_override(doc):
+    """Save admin-managed fields to product_overrides (keyed by barcode) so the nightly
+    Oracle full-overwrite re-applies them. No-op for products without a barcode."""
+    bc = doc.get("barcode")
+    if not bc:
+        return
+    ov = {k: doc.get(k) for k in oracle_sync.OVERRIDE_FIELDS}
+    ov["barcode"] = str(bc)
+    ov["updated_at"] = now_iso()
+    await db.product_overrides.update_one({"barcode": str(bc)}, {"$set": ov}, upsert=True)
 
 
 @api.post("/admin/products")
@@ -629,6 +734,7 @@ async def admin_create_product(payload: ProductIn, request: Request, admin: dict
     doc = payload.model_dump()
     doc["source"] = "local"
     res = await db.products_local.insert_one(doc)
+    await _persist_override(doc)
     await audit(admin, "create", "product", res.inserted_id, request, None, doc)
     return clean(await db.products_local.find_one({"_id": res.inserted_id}))
 
@@ -638,8 +744,10 @@ async def admin_update_product(pid: str, payload: ProductIn, request: Request, a
     if not ObjectId.is_valid(pid):
         raise HTTPException(status_code=400, detail="Invalid id")
     doc = payload.model_dump()
-    doc["source"] = "local"
+    # Do NOT force source here: oracle-synced products must keep source='oracle' so the
+    # nightly sync keeps managing them (otherwise a stale 'local' duplicate would appear).
     await db.products_local.update_one({"_id": ObjectId(pid)}, {"$set": doc})
+    await _persist_override(doc)
     await audit(admin, "update", "product", pid, request, None, doc)
     return clean(await db.products_local.find_one({"_id": ObjectId(pid)}))
 
@@ -655,13 +763,15 @@ async def admin_delete_product(pid: str, request: Request, admin: dict = Depends
 
 @api.get("/admin/categories")
 async def admin_list_categories(admin: dict = Depends(require_admin)):
-    docs = await db.categories.find({}).sort("sort_order", 1).to_list(200)
+    docs = await db.categories.find({}).sort([("sort_order", 1), ("name_en", 1)]).to_list(200)
     return [clean(d) for d in docs]
 
 
 @api.post("/admin/categories")
 async def admin_create_category(payload: CategoryIn, request: Request, admin: dict = Depends(require_admin)):
-    res = await db.categories.insert_one(payload.model_dump())
+    doc = payload.model_dump()
+    doc["slug"] = (doc.get("slug") or "").strip().lower()  # slugs are always lowercase & URL-safe
+    res = await db.categories.insert_one(doc)
     await audit(admin, "create", "category", res.inserted_id, request)
     return clean(await db.categories.find_one({"_id": res.inserted_id}))
 
@@ -670,7 +780,9 @@ async def admin_create_category(payload: CategoryIn, request: Request, admin: di
 async def admin_update_category(cid: str, payload: CategoryIn, request: Request, admin: dict = Depends(require_admin)):
     if not ObjectId.is_valid(cid):
         raise HTTPException(status_code=400, detail="Invalid id")
-    await db.categories.update_one({"_id": ObjectId(cid)}, {"$set": payload.model_dump()})
+    doc = payload.model_dump()
+    doc["slug"] = (doc.get("slug") or "").strip().lower()
+    await db.categories.update_one({"_id": ObjectId(cid)}, {"$set": doc})
     return clean(await db.categories.find_one({"_id": ObjectId(cid)}))
 
 
@@ -782,10 +894,15 @@ async def admin_audit_logs(admin: dict = Depends(require_admin)):
 
 @api.get("/admin/sync/status")
 async def sync_status(admin: dict = Depends(require_admin)):
+    last = await db.sync_state.find_one({"_id": "oracle"})
+    last_oracle_sync = None
+    if last:
+        last_oracle_sync = {k: last.get(k) for k in ("ok", "synced", "overrides_applied", "removed", "at")}
     return {
         "oracle_available": oracle_repo.is_available(),
         "google_sheets_available": google_sheets_repo.is_available(),
         "google_sheet_id": os.environ.get("GOOGLE_SHEET_ID", "not-configured"),
+        "last_oracle_sync": last_oracle_sync,
     }
 
 
@@ -803,9 +920,58 @@ async def sync_oracle_to_sheets(admin: dict = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Sync failed: {repr(e)[:100]}")
 
 
+@api.post("/admin/sync/oracle-to-mongo")
+async def sync_oracle_to_mongo_endpoint(admin: dict = Depends(require_admin)):
+    """Manually trigger the Oracle -> MongoDB product sync (same job the nightly cron runs)."""
+    if not oracle_repo.is_available():
+        raise HTTPException(status_code=503, detail="Oracle not available")
+    try:
+        return await oracle_sync.run_sync(db)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Sync failed: {repr(e)[:120]}")
+
+
+def _do_backup():
+    """Blocking: mongodump the DB + tar the uploads folder into BACKUP_DIR. Run via to_thread."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    db_file = BACKUP_DIR / f"faiha-manual-{ts}.gz"
+    up_file = BACKUP_DIR / f"uploads-manual-{ts}.tgz"
+    with open(db_file, "wb") as f:
+        subprocess.run(
+            ["mongodump", f"--uri={mongo_url}", "--db", os.environ["DB_NAME"], "--gzip", "--archive"],
+            check=True, stdout=f, stderr=subprocess.DEVNULL,
+        )
+    subprocess.run(["tar", "-czf", str(up_file), "-C", str(UPLOAD_DIR.parent), UPLOAD_DIR.name], check=True)
+    return {"_id": "last", "trigger": "manual", "at": now_iso(),
+            "db_file": db_file.name, "db_size": db_file.stat().st_size,
+            "uploads_file": up_file.name, "uploads_size": up_file.stat().st_size}
+
+
+@api.post("/admin/backup/now")
+async def backup_now(admin: dict = Depends(require_admin)):
+    """On-demand backup: DB dump + uploads archive into the shared backup folder."""
+    try:
+        res = await asyncio.to_thread(_do_backup)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Backup failed: {repr(e)[:150]}")
+    await db.backup_state.update_one({"_id": "last"}, {"$set": res}, upsert=True)
+    return res
+
+
+@api.get("/admin/backup/status")
+async def backup_status(admin: dict = Depends(require_admin)):
+    last = await db.backup_state.find_one({"_id": "last"})
+    if not last:
+        return {"last_backup": None}
+    return {"last_backup": {k: last.get(k) for k in ("trigger", "at", "db_file", "db_size", "uploads_file", "uploads_size")}}
+
+
 # ============================== Startup ====================================
 
 app.include_router(api)
+# Serve uploaded product images. Mounted under /api so nginx proxies it to the backend.
+app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

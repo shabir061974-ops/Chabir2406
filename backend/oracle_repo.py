@@ -151,6 +151,37 @@ def list_products(limit=1000):
         return []
 
 
+def fetch_product_master(limit=100000):
+    """Uncached full read of PRODUCT_MASTER for the nightly MongoDB sync.
+
+    Returns base dicts (barcode, product_id, name_ar, price, stock). Oracle owns these
+    fields; category / English name / images are layered on later from admin overrides.
+    """
+    if not _available:
+        return []
+    sql = (
+        "SELECT PRODUCT_ID, ITEM_NAME, BARCODE, PRICE, AVAILABLE_QUANTITY "
+        f"FROM {_table()} WHERE ROWNUM <= :lim"
+    )
+    with _pool.acquire() as conn:
+        cur = conn.cursor()
+        t0 = time.time()
+        cur.execute(sql, {"lim": limit})
+        rows = cur.fetchall()
+        logger.info("Oracle fetch_product_master rows=%d dur=%.3fs", len(rows), time.time() - t0)
+        out = []
+        for pid, name, barcode, price, qty in rows:
+            bc = str(barcode).strip() if barcode is not None else str(pid)
+            out.append({
+                "product_id": pid,
+                "barcode": bc,
+                "name_ar": str(name or "").strip(),
+                "price": round(float(price or 0), 3),
+                "stock": int(qty or 0),
+            })
+        return out
+
+
 def get_by_barcode(barcode):
     for p in list_products():
         if p.get("barcode") == str(barcode):

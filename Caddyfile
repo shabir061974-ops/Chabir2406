@@ -1,0 +1,11 @@
+# Auto-HTTPS reverse proxy for the Faiha Co-operative app.
+# Caddy automatically obtains and renews a free Let's Encrypt certificate.
+# Canonical host is www.faihacoopkw.com; the apex redirects to it.
+
+www.faihacoopkw.com {
+	reverse_proxy frontend:80
+}
+
+faihacoopkw.com {
+	redir https://www.faihacoopkw.com{uri} permanent
+}

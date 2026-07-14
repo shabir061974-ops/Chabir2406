@@ -1,13 +1,29 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Globe, Menu, X } from "lucide-react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Search, ShoppingCart, Globe, Menu, X, ClipboardList } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+// Pill style for desktop nav links (active = blue background, white text).
+const deskLink = ({ isActive }) =>
+    `px-4 py-2 rounded-[10px] text-[15px] font-medium tracking-tight whitespace-nowrap transition-all duration-200 ease-out ${
+        isActive
+            ? "bg-[#0B6CF4] text-white shadow-sm shadow-blue-500/20"
+            : "text-slate-600 hover:text-[#0B6CF4] hover:bg-[#0B6CF4]/[0.08]"
+    }`;
+
+// Full-width variant for the mobile menu.
+const mobLink = ({ isActive }) =>
+    `flex items-center px-4 py-3 rounded-[10px] text-[15px] font-medium transition-all duration-200 ${
+        isActive
+            ? "bg-[#0B6CF4] text-white shadow-sm"
+            : "text-slate-700 hover:text-[#0B6CF4] hover:bg-[#0B6CF4]/[0.08]"
+    }`;
+
 export const Header = ({ categories = [] }) => {
-    const { t, toggleLang, isRtl, ln } = useLang();
+    const { t, toggleLang, ln } = useLang();
     const { count, setOpen } = useCart();
     const navigate = useNavigate();
     const [q, setQ] = useState("");
@@ -22,6 +38,7 @@ export const Header = ({ categories = [] }) => {
     return (
         <header className="sticky top-0 z-50 glass border-b border-border" data-testid="site-header">
             <div className="mx-auto max-w-7xl px-4 sm:px-6">
+                {/* top bar: logo · search · actions */}
                 <div className="flex items-center gap-4 h-16 sm:h-20">
                     <Link to="/" className="flex items-center gap-2 shrink-0" data-testid="logo-link">
                         <img src="/faiha-logo.png" alt={t("brand")} className="w-11 h-11 rounded-full object-cover" />
@@ -58,42 +75,56 @@ export const Header = ({ categories = [] }) => {
                                 </span>
                             )}
                         </Button>
-                        <Button variant="ghost" size="icon" className="md:hidden text-forest" onClick={() => setMenuOpen((v) => !v)} data-testid="mobile-menu-toggle">
-                            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                        <Button variant="ghost" size="icon" className="md:hidden text-forest" onClick={() => setMenuOpen((v) => !v)} data-testid="mobile-menu-toggle" aria-label="Menu">
+                            <span className="relative block w-5 h-5">
+                                <Menu className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${menuOpen ? "opacity-0 rotate-90 scale-75" : "opacity-100 rotate-0 scale-100"}`} />
+                                <X className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${menuOpen ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-75"}`} />
+                            </span>
                         </Button>
                     </div>
                 </div>
 
-                {/* category nav */}
-                <nav className="flex items-center gap-3 sm:gap-6 h-11 text-sm font-medium text-muted-foreground overflow-x-auto pb-px -mx-4 px-4 md:mx-0 md:px-0 md:overflow-visible scrollbar-hide">
-                    <Link to="/products" className="hover:text-forest whitespace-nowrap transition-colors shrink-0" data-testid="nav-shop">{t("all_products")}</Link>
+                {/* desktop category nav (dynamic: renders whatever active categories the API returns) */}
+                <nav className="hidden md:flex items-center gap-2 h-14 scrollbar-hide" data-testid="primary-nav">
+                    <NavLink to="/products" end className={deskLink} data-testid="nav-shop">{t("all_products")}</NavLink>
                     {categories.map((c) => (
-                        <Link key={c.id} to={`/category/${c.slug}`} className="hover:text-forest whitespace-nowrap transition-colors shrink-0" data-testid={`nav-cat-${c.slug}`}>
+                        <NavLink key={c.id} to={`/category/${c.slug}`} end className={deskLink} data-testid={`nav-cat-${c.slug}`}>
                             {ln(c)}
-                        </Link>
+                        </NavLink>
                     ))}
-                    <Link to="/track" className="hover:text-forest whitespace-nowrap transition-colors ms-auto shrink-0 hidden sm:block" data-testid="nav-track">{t("nav_track")}</Link>
+                    <NavLink to="/track" end className={({ isActive }) => `${deskLink({ isActive })} ms-auto`} data-testid="nav-track">
+                        {t("nav_track")}
+                    </NavLink>
                 </nav>
             </div>
 
-            {/* mobile menu */}
-            {menuOpen && (
-                <div className="md:hidden border-t border-border bg-white px-4 py-4 space-y-3" data-testid="mobile-menu">
+            {/* mobile menu (smooth slide-down) */}
+            <div
+                className={`md:hidden overflow-hidden border-t border-border bg-white/95 backdrop-blur transition-all duration-300 ease-in-out ${
+                    menuOpen ? "max-h-[80vh] opacity-100" : "max-h-0 opacity-0"
+                }`}
+                data-testid="mobile-menu"
+            >
+                <div className="px-4 py-4 space-y-3">
                     <form onSubmit={submitSearch}>
                         <div className="relative">
                             <Search className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted-foreground" />
                             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search_placeholder")} className="ps-9 rounded-full" />
                         </div>
                     </form>
-                    <div className="grid grid-cols-2 gap-2">
-                        <Link to="/products" onClick={() => setMenuOpen(false)} className="py-2 text-sm font-medium text-forest">{t("all_products")}</Link>
+                    <div className="flex flex-col gap-1">
+                        <NavLink to="/products" end onClick={() => setMenuOpen(false)} className={mobLink}>{t("all_products")}</NavLink>
                         {categories.map((c) => (
-                            <Link key={c.id} to={`/category/${c.slug}`} onClick={() => setMenuOpen(false)} className="py-2 text-sm text-muted-foreground">{ln(c)}</Link>
+                            <NavLink key={c.id} to={`/category/${c.slug}`} end onClick={() => setMenuOpen(false)} className={mobLink}>
+                                {ln(c)}
+                            </NavLink>
                         ))}
-                        <Link to="/track" onClick={() => setMenuOpen(false)} className="py-2 text-sm text-muted-foreground">{t("nav_track")}</Link>
+                        <NavLink to="/track" end onClick={() => setMenuOpen(false)} className={mobLink}>
+                            <ClipboardList className="w-4 h-4 me-2" />{t("nav_track")}
+                        </NavLink>
                     </div>
                 </div>
-            )}
+            </div>
         </header>
     );
 };
