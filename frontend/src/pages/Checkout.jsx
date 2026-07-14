@@ -6,6 +6,7 @@ import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { formatKD } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,7 +138,7 @@ export default function Checkout() {
                     <div className="space-y-3 max-h-52 overflow-y-auto mb-4">
                         {items.map((i) => (
                             <div key={i.product_id} className="flex items-center gap-3 text-sm">
-                                <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{i.image && <img src={i.image} alt="" className="w-full h-full object-cover" />}</div>
+                                <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{i.image && <img src={resolveImageUrl(i.image)} alt="" className="w-full h-full object-cover" />}</div>
                                 <div className="flex-1 min-w-0">
                                     {/* Bold product name; quantity is kept internally but not shown to the customer. */}
                                     <p className="font-bold line-clamp-1">{ln(i)}</p>

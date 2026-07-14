@@ -5,6 +5,7 @@ import { ArrowRight, Leaf, Truck, CreditCard } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { ProductCard } from "@/components/storefront/ProductCard";
+import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 
 const HERO = "https://images.unsplash.com/photo-1573246123716-6b1782bfc499?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600";
@@ -64,7 +65,7 @@ export default function Home() {
                     {categories.map((c, i) => (
                         <Link key={c.id} to={`/category/${c.slug}`} data-testid={`category-tile-${c.slug}`}
                             className="group relative overflow-hidden rounded-2xl aspect-[4/3] border border-border">
-                            <img src={c.image} alt={ln(c)} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            <img src={resolveImageUrl(c.image)} alt={ln(c)} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                             <div className="absolute inset-0 bg-gradient-to-t from-forest-dark/85 to-transparent" />
                             <span className="absolute bottom-3 start-4 end-4 text-white font-heading font-semibold text-lg leading-tight">{ln(c)}</span>
                         </Link>

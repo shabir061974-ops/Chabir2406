@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { formatKD } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -39,7 +40,7 @@ export default function ProductDetail() {
             </Link>
             <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
                 <div className="relative overflow-hidden rounded-3xl bg-secondary/40 aspect-square border border-border">
-                    {(p.images || [])[0] && <img src={p.images[0]} alt={ln(p)} className="w-full h-full object-cover" />}
+                    {(p.images || [])[0] && <img src={resolveImageUrl(p.images[0])} alt={ln(p)} className="w-full h-full object-cover" />}
                     {p.discount > 0 && <span className="absolute top-4 start-4 px-3 py-1.5 rounded-full bg-terracotta text-white text-sm font-bold">-{p.discount}%</span>}
                 </div>
 

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { formatKD } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -44,9 +45,9 @@ export const ProductCard = ({ product, index = 0 }) => {
         >
             <Link to={`/product/${product.id}`} className="relative block overflow-hidden bg-secondary/40 aspect-square">
                 {img && (
-                    <img src={img} alt={product.name_en || ln(product)} loading="lazy"
+                    <img src={resolveImageUrl(img)} alt={product.name_en || ln(product)} loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                        onerror="this.src='https://images.unsplash.com/photo-1559056199-641a0ac8b3f7?crop=entropy&cs=srgb&fm=jpg&q=85&w=900'" />
+                        onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1559056199-641a0ac8b3f7?crop=entropy&cs=srgb&fm=jpg&q=85&w=900"; }} />
                 )}
                 {hasDiscount && (
                     <span className="absolute top-3 start-3 px-2 py-1 rounded-full bg-terracotta text-white text-xs font-bold">

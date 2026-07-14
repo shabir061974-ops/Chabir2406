@@ -3,6 +3,7 @@ import { Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { formatKD } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +40,7 @@ export const CartDrawer = () => {
                             {items.map((it) => (
                                 <div key={it.product_id} className="flex gap-3" data-testid={`cart-item-${it.product_id}`}>
                                     <div className="w-16 h-16 rounded-xl overflow-hidden bg-secondary shrink-0">
-                                        {it.image && <img src={it.image} alt="" className="w-full h-full object-cover" />}
+                                        {it.image && <img src={resolveImageUrl(it.image)} alt="" className="w-full h-full object-cover" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm line-clamp-1">{ln(it)}</p>

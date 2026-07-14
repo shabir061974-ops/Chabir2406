@@ -4,6 +4,7 @@ import { CheckCircle2, Package, Truck, Clock, XCircle } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { formatKD } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image";
 import { statusKey } from "@/i18n/translations";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -65,7 +66,7 @@ export default function OrderConfirmation() {
                 <div className="space-y-3">
                     {order.items.map((it, i) => (
                         <div key={`${it.product_id}-${i}`} className="flex items-center gap-3 text-sm">
-                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-secondary shrink-0">{it.image && <img src={it.image} alt="" className="w-full h-full object-cover" />}</div>
+                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-secondary shrink-0">{it.image && <img src={resolveImageUrl(it.image)} alt="" className="w-full h-full object-cover" />}</div>
                             <span className="flex-1">{ln(it)} × {it.qty}</span>
                             <span className="font-semibold">{formatKD(it.line_total)}</span>
                         </div>
