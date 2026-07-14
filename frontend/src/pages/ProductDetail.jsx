@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Minus, ShoppingCart, ChevronLeft, Check } from "lucide-react";
+import { Plus, Minus, ShoppingCart, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
@@ -53,11 +53,11 @@ export default function ProductDetail() {
                         {p.discount > 0 && <span className="text-lg text-muted-foreground line-through mb-1">{formatKD(p.price)}</span>}
                     </div>
 
-                    <div className="mt-3">
-                        {soldOut
-                            ? <span className="inline-flex items-center gap-1 text-destructive font-medium text-sm">{t("out_of_stock")}</span>
-                            : <span className="inline-flex items-center gap-1 text-forest-light font-medium text-sm"><Check className="w-4 h-4" /> {t("in_stock")} ({p.stock})</span>}
-                    </div>
+                    {soldOut && (
+                        <div className="mt-3">
+                            <span className="inline-flex items-center gap-1 text-destructive font-medium text-sm">{t("out_of_stock")}</span>
+                        </div>
+                    )}
 
                     {p.barcode && <p className="mt-2 text-xs text-muted-foreground font-mono">Barcode: {p.barcode}</p>}
 
