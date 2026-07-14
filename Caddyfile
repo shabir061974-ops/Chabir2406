@@ -3,6 +3,8 @@
 # Canonical host is www.faihacoopkw.com; the apex redirects to it.
 
 www.faihacoopkw.com {
+	# HSTS: force HTTPS for a year (site is HTTPS-only via auto Let's Encrypt).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy frontend:80
 }
 
