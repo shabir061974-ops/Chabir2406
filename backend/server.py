@@ -151,6 +151,34 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def _normalize_phone(p: str) -> str:
+    return "".join(ch for ch in (p or "") if ch.isdigit())
+
+
+async def get_current_customer(request: Request) -> dict:
+    """Auth for customer accounts — accepts a Bearer token (preferred by the mobile apps) or a cookie."""
+    token = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if payload.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="Not a customer token")
+    cust = await db.customers.find_one({"_id": ObjectId(payload["sub"])})
+    if not cust:
+        raise HTTPException(status_code=401, detail="Customer not found")
+    return cust
+
+
 async def audit(actor, action, entity, entity_id, request: Request = None, before=None, after=None):
     await db.audit_logs.insert_one({
         "actor_id": actor.get("id") if actor else None,
@@ -167,6 +195,27 @@ async def audit(actor, action, entity, entity_id, request: Request = None, befor
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+
+
+class CustomerRegisterIn(BaseModel):
+    phone: str
+    password: str = Field(min_length=6)
+    name: str
+
+
+class CustomerLoginIn(BaseModel):
+    phone: str
+    password: str
+
+
+class CustomerProfileIn(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    addresses: Optional[List[str]] = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
 
 
 class CartItemIn(BaseModel):
@@ -307,7 +356,7 @@ async def app_config():
         "maintenance": False,
         "currency": CURRENCY,
         "contact": {"whatsapp": "96590986000"},
-        "features": {"knet": False, "customer_accounts": False},
+        "features": {"knet": False, "customer_accounts": True},
     }
 
 
@@ -665,6 +714,83 @@ async def refresh_token(request: Request, response: Response):
         return clean(user)
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+# ============================== Customer accounts ==========================
+
+@api.post("/customer/register")
+@limiter.limit("5/minute")
+async def customer_register(request: Request, payload: CustomerRegisterIn):
+    phone = _normalize_phone(payload.phone)
+    if len(phone) < 6:
+        raise HTTPException(status_code=400, detail="Enter a valid phone number")
+    if await db.customers.find_one({"phone": phone}):
+        raise HTTPException(status_code=400, detail="An account with this phone number already exists")
+    doc = {"phone": phone, "password_hash": hash_password(payload.password),
+           "name": (payload.name or "").strip(), "email": None, "addresses": [],
+           "created_at": now_iso()}
+    res = await db.customers.insert_one(doc)
+    cid = str(res.inserted_id)
+    return {"access_token": create_access_token(cid, phone, "customer"),
+            "refresh_token": create_refresh_token(cid), "token_type": "bearer",
+            "customer": clean({**doc, "_id": res.inserted_id})}
+
+
+@api.post("/customer/login")
+@limiter.limit("10/minute")
+async def customer_login(request: Request, payload: CustomerLoginIn):
+    phone = _normalize_phone(payload.phone)
+    cust = await db.customers.find_one({"phone": phone})
+    if not cust or not verify_password(payload.password, cust["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid phone number or password")
+    cid = str(cust["_id"])
+    return {"access_token": create_access_token(cid, phone, "customer"),
+            "refresh_token": create_refresh_token(cid), "token_type": "bearer",
+            "customer": clean(cust)}
+
+
+@api.post("/customer/refresh")
+@limiter.limit("30/minute")
+async def customer_refresh(request: Request, payload: RefreshIn):
+    try:
+        p = jwt.decode(payload.refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if p.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        cust = await db.customers.find_one({"_id": ObjectId(p["sub"])})
+        if not cust:
+            raise HTTPException(status_code=401, detail="Customer not found")
+        return {"access_token": create_access_token(str(cust["_id"]), cust["phone"], "customer"),
+                "token_type": "bearer"}
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+@api.get("/customer/me")
+async def customer_me(customer: dict = Depends(get_current_customer)):
+    return clean(customer)
+
+
+@api.put("/customer/profile")
+async def customer_update_profile(payload: CustomerProfileIn, customer: dict = Depends(get_current_customer)):
+    upd = {}
+    if payload.name is not None:
+        upd["name"] = payload.name.strip()
+    if payload.email is not None:
+        upd["email"] = payload.email.strip() or None
+    if payload.addresses is not None:
+        upd["addresses"] = [a.strip() for a in payload.addresses if a and a.strip()]
+    if upd:
+        await db.customers.update_one({"_id": customer["_id"]}, {"$set": upd})
+    return clean(await db.customers.find_one({"_id": customer["_id"]}))
+
+
+@api.get("/customer/orders")
+async def customer_orders(customer: dict = Depends(get_current_customer)):
+    """A customer's own order history — matched by phone, so prior guest orders on that number show too."""
+    target = _normalize_phone(customer.get("phone", ""))
+    docs = await db.orders.find({}).sort("created_at", -1).to_list(1000)
+    mine = [clean(d) for d in docs if _normalize_phone((d.get("customer") or {}).get("phone", "")) == target]
+    return mine[:200]
 
 
 # ============================== Admin ======================================
@@ -1067,6 +1193,7 @@ async def startup():
     oracle_repo.init_pool()
     google_sheets_repo.init_sheets()
     await db.users.create_index("email", unique=True)
+    await db.customers.create_index("phone", unique=True)
     await db.orders.create_index("order_no", unique=True)
     await db.orders.create_index("placed_at")
     await db.products_local.create_index("barcode")
