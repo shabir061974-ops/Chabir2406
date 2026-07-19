@@ -14,6 +14,10 @@ import Checkout from "@/pages/Checkout";
 import OrderConfirmation from "@/pages/OrderConfirmation";
 import TrackOrder from "@/pages/TrackOrder";
 import KnetPayment from "@/pages/KnetPayment";
+import About from "@/pages/About";
+import Contact from "@/pages/Contact";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import Terms from "@/pages/Terms";
 
 import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminLayout from "@/pages/admin/AdminLayout";
@@ -45,6 +49,10 @@ function App() {
                                 <Route path="/order/:orderNo" element={<OrderConfirmation />} />
                                 <Route path="/track" element={<TrackOrder />} />
                                 <Route path="/account" element={<Account />} />
+                                <Route path="/about" element={<About />} />
+                                <Route path="/contact" element={<Contact />} />
+                                <Route path="/privacy" element={<PrivacyPolicy />} />
+                                <Route path="/terms" element={<Terms />} />
                             </Route>
                             <Route path="/payment/knet/:orderNo" element={<KnetPayment />} />
 

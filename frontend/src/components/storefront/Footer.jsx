@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MapPin, Phone, Lock } from "lucide-react";
+import { MapPin, Phone, Lock, Mail, Clock } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 
 export const Footer = () => {
@@ -13,6 +13,7 @@ export const Footer = () => {
                         <span className="font-heading font-extrabold text-lg">{t("brand")}</span>
                     </div>
                     <p className="text-sm text-white/70 leading-relaxed">{t("tagline")}</p>
+                    <p className="text-xs text-white/60 leading-relaxed">Official Online Store of<br />AL-FAIHA CO-OPERATIVE SOCIETY</p>
                 </div>
                 <div>
                     <h4 className="font-heading font-semibold mb-3">{t("nav_shop")}</h4>
@@ -25,8 +26,10 @@ export const Footer = () => {
                 <div>
                     <h4 className="font-heading font-semibold mb-3">Contact</h4>
                     <ul className="space-y-2 text-sm text-white/70">
-                        <li className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Faiha, Kuwait</li>
-                        <li className="flex items-center gap-2"><Phone className="w-4 h-4" /> +965 1861000</li>
+                        <li className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> Faiha, Kuwait</li>
+                        <li className="flex items-center gap-2"><Phone className="w-4 h-4 shrink-0" /> +965 1861000</li>
+                        <li className="flex items-center gap-2"><Mail className="w-4 h-4 shrink-0" /> <a href="mailto:info@faihacoopkw.com" className="hover:text-white break-all">info@faihacoopkw.com</a></li>
+                        <li className="flex items-center gap-2"><Clock className="w-4 h-4 shrink-0" /> {t("hours_24")}</li>
                     </ul>
                 </div>
                 <div>
@@ -37,7 +40,7 @@ export const Footer = () => {
                 </div>
             </div>
             <div className="border-t border-white/10 py-5 text-center text-xs text-white/50">
-                © {new Date().getFullYear()} {t("brand")} — Faiha Co-operative Society, Kuwait
+                © {new Date().getFullYear()} AL-FAIHA CO-OPERATIVE SOCIETY. All Rights Reserved.
             </div>
         </footer>
     );
