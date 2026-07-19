@@ -1,12 +1,14 @@
-import { useEffect } from "react";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 
 export default function Terms() {
     const { t } = useLang();
 
-    useEffect(() => {
-        document.title = `${t("terms")} | ${t("legal_name")}`;
-    }, [t]);
+    useSeo({
+        title: `${t("terms")} | ${t("legal_name")}`,
+        description: t("tc_s1_body"),
+        path: "/terms",
+    });
 
     const sections = [
         { title: t("tc_s1_title"), body: [t("tc_s1_body")] },

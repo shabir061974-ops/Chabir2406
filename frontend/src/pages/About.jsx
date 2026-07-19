@@ -1,7 +1,7 @@
-import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Building2, Target, ShoppingBasket, Globe, Phone, Mail, Clock, ArrowRight } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 import { Button } from "@/components/ui/button";
 
 // Non-translatable contact constants (URLs / numbers).
@@ -22,9 +22,11 @@ const OFFERING_KEYS = [
 export default function About() {
     const { t } = useLang();
 
-    useEffect(() => {
-        document.title = `${t("about_title")} | ${t("legal_name")}`;
-    }, [t]);
+    useSeo({
+        title: `${t("about_title")} | ${t("legal_name")}`,
+        description: t("about_intro"),
+        path: "/about",
+    });
 
     return (
         <div data-testid="about-page">

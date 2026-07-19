@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Leaf, Truck, CreditCard } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,16 @@ import { Button } from "@/components/ui/button";
 const HERO = "https://images.unsplash.com/photo-1573246123716-6b1782bfc499?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600";
 
 export default function Home() {
-    const { t, ln } = useLang();
+    const { t, ln, lang } = useLang();
     const { categories = [] } = useOutletContext();
+
+    useSeo({
+        title: lang === "ar" ? "متجر الفيحاء | جمعية الفيحاء التعاونية" : "Faiha Store | AL-FAIHA CO-OPERATIVE SOCIETY",
+        description: lang === "ar"
+            ? "المنصة الرسمية للتسوق الإلكتروني لجمعية الفيحاء التعاونية — بقالة ومخبوزات ومشروبات وقهوة ومنتجات منزلية واحتياجات يومية في جميع أنحاء الكويت."
+            : "Official online shopping platform of AL-FAIHA CO-OPERATIVE SOCIETY providing groceries, beverages, bakery products, coffee, household items and daily essentials throughout Kuwait.",
+        path: "/",
+    });
 
     const { data: featured } = useQuery({
         queryKey: ["products", "featured"],

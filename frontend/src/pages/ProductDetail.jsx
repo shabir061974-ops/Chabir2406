@@ -5,6 +5,7 @@ import { Plus, Minus, ShoppingCart, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
+import { useSeo } from "@/hooks/use-seo";
 import { formatKD } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,12 @@ export default function ProductDetail() {
     const { data: p, isLoading } = useQuery({
         queryKey: ["product", id],
         queryFn: async () => (await api.get(`/product`.replace("/product", `/products/${id}`))).data,
+    });
+
+    useSeo({
+        title: p ? `${ln(p)} | Faiha Store` : undefined,
+        description: p ? `Buy ${ln(p)} online at Faiha Store — ${p.category}, ${formatKD(p.effective_price ?? p.price)}. Fast delivery across Kuwait from AL-FAIHA CO-OPERATIVE SOCIETY.` : undefined,
+        path: `/product/${id}`,
     });
 
     if (isLoading) {

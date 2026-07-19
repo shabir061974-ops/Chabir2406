@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Building2, Globe, Phone, Mail, Clock, MapPin, Send } from "lucide-react";
 import { toast } from "sonner";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,9 +20,11 @@ export default function Contact() {
     const [subject, setSubject] = useState("");
     const [message, setMessage] = useState("");
 
-    useEffect(() => {
-        document.title = `${t("nav_contact")} | ${t("legal_name")}`;
-    }, [t]);
+    useSeo({
+        title: `${t("nav_contact")} | ${t("legal_name")}`,
+        description: t("contact_intro"),
+        path: "/contact",
+    });
 
     const onSubmit = (e) => {
         e.preventDefault();

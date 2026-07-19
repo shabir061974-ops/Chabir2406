@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +38,14 @@ export default function Catalog() {
 
     const cat = categories.find((c) => c.slug === slug);
     const title = cat ? ln(cat) : promo ? t("on_sale") : featured ? t("featured") : q ? q : t("all_products");
+
+    useSeo({
+        title: `${title} | Faiha Store`,
+        description: cat
+            ? `${title} — shop ${title} online at Faiha Store, the official platform of AL-FAIHA CO-OPERATIVE SOCIETY. Fast delivery across Kuwait.`
+            : `${t("all_products")} — browse the full Faiha Store catalog: groceries, bakery, beverages, coffee and daily essentials. Official platform of AL-FAIHA CO-OPERATIVE SOCIETY.`,
+        path: slug ? `/category/${slug}` : "/products",
+    });
 
     const setSort = (v) => {
         const sp = new URLSearchParams(params);

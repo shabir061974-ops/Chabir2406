@@ -1,12 +1,14 @@
-import { useEffect } from "react";
 import { useLang } from "@/context/LanguageContext";
+import { useSeo } from "@/hooks/use-seo";
 
 export default function PrivacyPolicy() {
     const { t } = useLang();
 
-    useEffect(() => {
-        document.title = `${t("privacy_policy")} | ${t("legal_name")}`;
-    }, [t]);
+    useSeo({
+        title: `${t("privacy_policy")} | ${t("legal_name")}`,
+        description: t("pp_s1_body"),
+        path: "/privacy",
+    });
 
     const sections = [
         { title: t("pp_s1_title"), body: [t("pp_s1_body")] },
