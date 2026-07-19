@@ -40,6 +40,15 @@ export const Footer = () => {
                 </div>
             </div>
             <div className="border-t border-white/10 py-5 text-center text-xs text-white/50">
+                <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-2 text-white/60" data-testid="footer-legal-links">
+                    <Link to="/about" className="hover:text-white">{t("nav_about")}</Link>
+                    <span className="text-white/20" aria-hidden="true">·</span>
+                    <Link to="/contact" className="hover:text-white">{t("nav_contact")}</Link>
+                    <span className="text-white/20" aria-hidden="true">·</span>
+                    <Link to="/privacy" className="hover:text-white">{t("privacy_policy")}</Link>
+                    <span className="text-white/20" aria-hidden="true">·</span>
+                    <Link to="/terms" className="hover:text-white">{t("terms")}</Link>
+                </nav>
                 © {new Date().getFullYear()} AL-FAIHA CO-OPERATIVE SOCIETY. All Rights Reserved.
             </div>
         </footer>
