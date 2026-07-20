@@ -6,6 +6,18 @@ import { formatKD } from "@/lib/format";
 const FOREST = [22, 78, 46]; // #164E2E, matches the site's brand color
 const MARGIN = { top: 14, bottom: 16, left: 10, right: 10 };
 
+// Product/customer names can be Arabic (Oracle-sourced item names, customer names) even
+// though most report labels are English. jsPDF's built-in fonts (helvetica/times/courier)
+// have zero Arabic glyphs -- any Arabic text through them renders as garbage substitution
+// characters. Amiri is a static (non-variable), OFL-licensed Arabic typeface, embedded here
+// on demand (fetched only when a PDF is actually generated, not on every page load).
+const ARABIC_FONT_URL = "/fonts/Amiri-Regular.ttf";
+const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
+function containsArabic(value) {
+    return ARABIC_RE.test(String(value ?? ""));
+}
+
 async function loadImageAsDataUrl(url) {
     try {
         const res = await fetch(url);
@@ -19,6 +31,46 @@ async function loadImageAsDataUrl(url) {
     } catch {
         return null; // logo is a nice-to-have; never fail the whole report over it
     }
+}
+
+/** Fetches the Arabic font and embeds it in the doc. Returns true if Arabic text can now
+ * render correctly; false (falling back to helvetica -- still readable for English/numeric
+ * cells) if the font couldn't be loaded, e.g. offline. */
+async function registerArabicFont(doc) {
+    try {
+        const res = await fetch(ARABIC_FONT_URL);
+        const buf = await res.arrayBuffer();
+        let binary = "";
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        doc.addFileToVFS("Amiri-Regular.ttf", base64);
+        doc.addFont("Amiri-Regular.ttf", "Amiri", "normal");
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Cell hook shared by every autoTable call: switches to the Arabic font + right-to-left
+ * rendering only for cells whose content actually contains Arabic script, otherwise leaves
+ * the normal Helvetica/left-to-right rendering untouched. */
+function makeArabicAwareCellHook(arabicReady) {
+    return (data) => {
+        const text = Array.isArray(data.cell.text) ? data.cell.text.join(" ") : String(data.cell.text ?? "");
+        if (arabicReady && containsArabic(text)) {
+            doc_setFontSafe(data, "Amiri", "normal");
+            data.doc.setR2L(true);
+        } else {
+            data.doc.setR2L(false);
+        }
+    };
+}
+
+// autoTable's own font-family styling can reset the font right before willDrawCell fires for
+// the header/body font, so we set it directly on the doc used for this specific draw call.
+function doc_setFontSafe(data, name, style) {
+    try { data.doc.setFont(name, style); } catch { /* font not registered; keep default */ }
 }
 
 function pageWidth(doc) { return doc.internal.pageSize.getWidth(); }
@@ -123,7 +175,7 @@ function addSummaryCards(doc, y, summary, currency) {
     return y + rows * rowH + 6;
 }
 
-function addTopProductsTable(doc, y, topProducts, currency) {
+function addTopProductsTable(doc, y, topProducts, currency, arabicReady) {
     if (!topProducts.length) return y;
     y = ensureSpace(doc, y, 20);
     y = sectionTitle(doc, y, "Top 10 Selling Products");
@@ -135,11 +187,12 @@ function addTopProductsTable(doc, y, topProducts, currency) {
         theme: "grid",
         headStyles: { fillColor: FOREST, textColor: 255, fontSize: 9 },
         styles: { fontSize: 8.5, cellPadding: 2 },
+        willDrawCell: makeArabicAwareCellHook(arabicReady),
     });
     return doc.lastAutoTable.finalY + 8;
 }
 
-function addPaymentSummaryTable(doc, y, paymentSummary, currency) {
+function addPaymentSummaryTable(doc, y, paymentSummary, currency, arabicReady) {
     if (!paymentSummary.length) return y;
     y = ensureSpace(doc, y, 20);
     y = sectionTitle(doc, y, "Payment Summary");
@@ -151,11 +204,12 @@ function addPaymentSummaryTable(doc, y, paymentSummary, currency) {
         theme: "grid",
         headStyles: { fillColor: FOREST, textColor: 255, fontSize: 9 },
         styles: { fontSize: 8.5, cellPadding: 2 },
+        willDrawCell: makeArabicAwareCellHook(arabicReady),
     });
     return doc.lastAutoTable.finalY + 8;
 }
 
-function addSalesDetailsTable(doc, y, salesDetails, currency) {
+function addSalesDetailsTable(doc, y, salesDetails, currency, arabicReady) {
     y = ensureSpace(doc, y, 20);
     y = sectionTitle(doc, y, "Sales Details");
     autoTable(doc, {
@@ -180,6 +234,7 @@ function addSalesDetailsTable(doc, y, salesDetails, currency) {
         headStyles: { fillColor: FOREST, textColor: 255, fontSize: 7.5 },
         styles: { fontSize: 7, cellPadding: 1.5, overflow: "linebreak" },
         columnStyles: { 6: { cellWidth: 45 } }, // Products column needs more room
+        willDrawCell: makeArabicAwareCellHook(arabicReady),
     });
     return doc.lastAutoTable.finalY + 6;
 }
@@ -209,7 +264,10 @@ export async function generateSalesReportPdf(report, chartNodes = {}) {
         throw new Error("No sales found for the selected period.");
     }
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const logoDataUrl = await loadImageAsDataUrl("/faiha-logo.png");
+    const [logoDataUrl, arabicReady] = await Promise.all([
+        loadImageAsDataUrl("/faiha-logo.png"),
+        registerArabicFont(doc),
+    ]);
 
     let y = addHeader(doc, { logoDataUrl, dateFrom: report.date_from, dateTo: report.date_to });
     y = addSummaryCards(doc, y, report.summary, report.currency);
@@ -219,9 +277,9 @@ export async function generateSalesReportPdf(report, chartNodes = {}) {
     if (chartNodes.paymentDist) y = await addChartImage(doc, chartNodes.paymentDist, y, "Payment Method Distribution");
     if (chartNodes.statusDist) y = await addChartImage(doc, chartNodes.statusDist, y, "Order Status Distribution");
 
-    y = addTopProductsTable(doc, y, report.top_products, report.currency);
-    y = addPaymentSummaryTable(doc, y, report.payment_summary, report.currency);
-    addSalesDetailsTable(doc, y, report.sales_details, report.currency);
+    y = addTopProductsTable(doc, y, report.top_products, report.currency, arabicReady);
+    y = addPaymentSummaryTable(doc, y, report.payment_summary, report.currency, arabicReady);
+    addSalesDetailsTable(doc, y, report.sales_details, report.currency, arabicReady);
 
     addFootersAndPageNumbers(doc);
     doc.save(`faiha-sales-report-${report.date_from}_to_${report.date_to}.pdf`);
