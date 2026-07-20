@@ -45,7 +45,7 @@ export const ProductCard = ({ product, index = 0 }) => {
         >
             <Link to={`/product/${product.id}`} className="relative block overflow-hidden bg-secondary/40 aspect-square">
                 {img && (
-                    <img src={resolveImageUrl(img)} alt={product.name_en || ln(product)} loading="lazy"
+                    <img src={resolveImageUrl(img)} alt={ln(product)} loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                         onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1559056199-641a0ac8b3f7?crop=entropy&cs=srgb&fm=jpg&q=85&w=900"; }} />
                 )}
@@ -63,13 +63,8 @@ export const ProductCard = ({ product, index = 0 }) => {
 
             <div className="flex flex-col flex-1 p-4 gap-1">
                 <Link to={`/product/${product.id}`}>
-                    <div className="font-heading font-medium text-base leading-snug text-foreground hover:text-forest transition-colors">
-                        {/* English name (always first) */}
-                        <div className="line-clamp-1">{product.name_en || ln(product)}</div>
-                        {/* Arabic name (always second) */}
-                        {product.name_ar && (
-                            <div className="text-sm text-muted-foreground line-clamp-1">{product.name_ar}</div>
-                        )}
+                    <div className="font-heading font-medium text-base leading-snug text-foreground hover:text-forest transition-colors line-clamp-1">
+                        {ln(product)}
                     </div>
                 </Link>
                 <p className="text-xs text-muted-foreground">{ln({ name_en: product.unit_en, name_ar: product.unit_ar })}</p>

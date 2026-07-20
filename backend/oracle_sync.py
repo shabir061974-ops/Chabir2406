@@ -1,8 +1,9 @@
 """Nightly sync: Oracle PRODUCT_MASTER -> MongoDB products_local (full overwrite).
 
-Oracle is the source of truth for price, stock, Arabic name and barcode. Admin-managed
-presentation fields (images, English name, category, Featured/On-Sale, discount) live in
-the barcode-keyed `product_overrides` collection and are re-applied on every sync, so the
+Oracle is the source of truth for price, stock, barcode, and both the Arabic (ITEM_NAME)
+and English (ITEM_NAME_ENG) names. Admin-managed presentation fields (images, category,
+Featured/On-Sale, discount, and an optional manual name_en override) live in the
+barcode-keyed `product_overrides` collection and are re-applied on every sync, so the
 nightly full overwrite never wipes them.
 
 Run standalone from cron:  python oracle_sync.py
@@ -34,7 +35,7 @@ def _base_doc(row):
     return {
         "barcode": row["barcode"],
         "product_id": row["product_id"],
-        "name_en": row["name_ar"],   # English name comes from override; Arabic as fallback
+        "name_en": row.get("name_en") or row["name_ar"],  # Oracle's ITEM_NAME_ENG; Arabic as last-resort fallback
         "name_ar": row["name_ar"],
         "category": DEFAULT_CATEGORY,
         "price": row["price"],

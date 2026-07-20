@@ -5,8 +5,9 @@ NOT support. We therefore use **thick mode** via the Oracle Instant Client (ORA_
 If the client lib or the server is unreachable, the app fails gracefully and the storefront
 falls back to the MongoDB catalog.
 
-Live PRODUCT_MASTER columns (verified): PRODUCT_ID, CATEGORY, ITEM_NAME, BARCODE, PRICE,
-AVAILABLE_QUANTITY, CREATED_DATE, UPDATED_DATE.
+Live PRODUCT_MASTER columns (verified): PRODUCT_ID, CATEGORY, ITEM_NAME, ITEM_NAME_ENG,
+BARCODE, PRICE, AVAILABLE_QUANTITY, CREATED_DATE, UPDATED_DATE. ITEM_NAME is Arabic,
+ITEM_NAME_ENG is English.
 """
 import os
 import time
@@ -111,7 +112,7 @@ def list_products(limit=1000):
     if _cache["data"] is not None and (now - _cache["ts"]) < _CACHE_TTL:
         return _cache["data"]
     sql = (
-        "SELECT PRODUCT_ID, CATEGORY, ITEM_NAME, BARCODE, PRICE, AVAILABLE_QUANTITY "
+        "SELECT PRODUCT_ID, CATEGORY, ITEM_NAME, ITEM_NAME_ENG, BARCODE, PRICE, AVAILABLE_QUANTITY "
         f"FROM {_table()} WHERE ROWNUM <= :lim"
     )
     try:
@@ -122,15 +123,16 @@ def list_products(limit=1000):
             rows = cur.fetchall()
             logger.info("Oracle list_products rows=%d dur=%.3fs", len(rows), time.time() - t0)
             out = []
-            for pid, cat, name, barcode, price, qty in rows:
-                name = str(name or "").strip()
+            for pid, cat, name_ar, name_eng, barcode, price, qty in rows:
+                name_ar = str(name_ar or "").strip()
+                name_en = str(name_eng or "").strip() or name_ar
                 out.append({
                     "id": f"ora-{barcode or pid}",
                     "source": "oracle",
                     "category": _slugify(cat),
                     "category_raw": cat,
-                    "name_en": name,
-                    "name_ar": name,
+                    "name_en": name_en,
+                    "name_ar": name_ar,
                     "barcode": str(barcode) if barcode is not None else None,
                     "price": round(float(price or 0), 3),
                     "effective_price": round(float(price or 0), 3),
@@ -154,13 +156,14 @@ def list_products(limit=1000):
 def fetch_product_master(limit=100000):
     """Uncached full read of PRODUCT_MASTER for the nightly MongoDB sync.
 
-    Returns base dicts (barcode, product_id, name_ar, price, stock). Oracle owns these
-    fields; category / English name / images are layered on later from admin overrides.
+    Returns base dicts (barcode, product_id, name_ar, name_en, price, stock). Oracle now
+    owns both names directly (ITEM_NAME / ITEM_NAME_ENG); category / images / any manual
+    name overrides are still layered on later from admin overrides.
     """
     if not _available:
         return []
     sql = (
-        "SELECT PRODUCT_ID, ITEM_NAME, BARCODE, PRICE, AVAILABLE_QUANTITY "
+        "SELECT PRODUCT_ID, ITEM_NAME, ITEM_NAME_ENG, BARCODE, PRICE, AVAILABLE_QUANTITY "
         f"FROM {_table()} WHERE ROWNUM <= :lim"
     )
     with _pool.acquire() as conn:
@@ -170,12 +173,15 @@ def fetch_product_master(limit=100000):
         rows = cur.fetchall()
         logger.info("Oracle fetch_product_master rows=%d dur=%.3fs", len(rows), time.time() - t0)
         out = []
-        for pid, name, barcode, price, qty in rows:
+        for pid, name_ar, name_eng, barcode, price, qty in rows:
             bc = str(barcode).strip() if barcode is not None else str(pid)
+            name_ar = str(name_ar or "").strip()
+            name_en = str(name_eng or "").strip() or name_ar
             out.append({
                 "product_id": pid,
                 "barcode": bc,
-                "name_ar": str(name or "").strip(),
+                "name_ar": name_ar,
+                "name_en": name_en,
                 "price": round(float(price or 0), 3),
                 "stock": int(qty or 0),
             })
