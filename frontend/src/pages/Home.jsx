@@ -1,6 +1,6 @@
 import { Link, useOutletContext } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Leaf, Truck, CreditCard } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useSeo } from "@/hooks/use-seo";
@@ -48,12 +48,6 @@ export default function Home() {
         queryFn: async () => (await api.get("/products?promo=true&page_size=8")).data,
     });
 
-    const features = [
-        { icon: Leaf, title: t("feat_fresh"), desc: t("feat_fresh_desc") },
-        { icon: Truck, title: t("feat_delivery"), desc: t("feat_delivery_desc") },
-        { icon: CreditCard, title: t("feat_pay"), desc: t("feat_pay_desc") },
-    ];
-
     return (
         <div data-testid="home-page">
             {/* Hero */}
@@ -97,21 +91,6 @@ export default function Home() {
             {promo?.items?.length > 0 && (
                 <ProductSection title={t("on_sale")} viewAllHref="/products?promo=true" items={promo.items} t={t} />
             )}
-
-            {/* Features strip */}
-            <section className="mx-auto max-w-7xl px-4 sm:px-6 mt-16">
-                <div className="grid sm:grid-cols-3 gap-4">
-                    {features.map((f) => (
-                        <div key={f.title} className="flex items-start gap-4 rounded-2xl bg-white border border-border p-6">
-                            <span className="grid place-items-center w-12 h-12 rounded-xl bg-forest/10 text-forest shrink-0"><f.icon className="w-6 h-6" /></span>
-                            <div>
-                                <h3 className="font-heading font-semibold text-lg">{f.title}</h3>
-                                <p className="text-sm text-muted-foreground mt-1">{f.desc}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </section>
 
             {/* Featured */}
             {featured?.items?.length > 0 && (
