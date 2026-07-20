@@ -1060,6 +1060,110 @@ async def admin_reports(period: str = "weekly", admin: dict = Depends(require_ad
     }
 
 
+@api.get("/admin/reports/sales")
+async def admin_sales_report(date_from: str, date_to: str, admin: dict = Depends(require_admin)):
+    """Sales report for an arbitrary [date_from, date_to] range (inclusive, both YYYY-MM-DD).
+
+    Unlike /admin/reports above (kept as-is), this only ever pulls orders whose placed_at
+    falls in the requested range -- a direct indexed range query on orders.placed_at, not a
+    full-collection load filtered in Python -- so it stays fast regardless of total order
+    history size. Revenue/products-sold/avg-order figures exclude cancelled orders (no real
+    sale happened); the four order-status counts and total_customers count every order in
+    range regardless of status, since those are about order volume, not revenue.
+    """
+    try:
+        start = datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc)
+        end = datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date_from/date_to must be YYYY-MM-DD")
+    if end <= start:
+        raise HTTPException(status_code=400, detail="date_to must be on or after date_from")
+
+    orders = await db.orders.find(
+        {"placed_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}
+    ).sort("placed_at", 1).to_list(50000)
+
+    completed = sum(1 for o in orders if o["order_status"] == "delivered")
+    cancelled = sum(1 for o in orders if o["order_status"] == "cancelled")
+    pending = sum(1 for o in orders if o["order_status"] == "pending")
+    revenue_orders = [o for o in orders if o["order_status"] != "cancelled"]
+    total_revenue = round(sum(o["net_payable"] for o in revenue_orders), 3)
+    avg_order_value = round(total_revenue / len(revenue_orders), 3) if revenue_orders else 0
+    total_products_sold = sum(it["qty"] for o in revenue_orders for it in o["items"])
+    total_customers = len({(o["customer"].get("phone") or o["customer"].get("name")) for o in orders})
+
+    prod_stats = {}
+    for o in revenue_orders:
+        for it in o["items"]:
+            s = prod_stats.setdefault(it["name_en"], {"name": it["name_en"], "qty": 0, "amount": 0.0})
+            s["qty"] += it["qty"]
+            s["amount"] += it["line_total"]
+    top_products = sorted(prod_stats.values(), key=lambda x: x["qty"], reverse=True)[:10]
+    for p in top_products:
+        p["amount"] = round(p["amount"], 3)
+
+    pm_stats = {}
+    for o in revenue_orders:
+        pm = o.get("payment_method") or "Other"
+        s = pm_stats.setdefault(pm, {"method": pm, "count": 0, "amount": 0.0})
+        s["count"] += 1
+        s["amount"] += o["net_payable"]
+    payment_summary = [{"method": k, "count": v["count"], "amount": round(v["amount"], 3)} for k, v in pm_stats.items()]
+
+    daily = {}
+    for o in revenue_orders:
+        day = o.get("placed_at", "")[:10]
+        d = daily.setdefault(day, {"date": day, "revenue": 0.0, "orders": 0})
+        d["revenue"] += o["net_payable"]
+        d["orders"] += 1
+    daily_trend = sorted(daily.values(), key=lambda x: x["date"])
+    for d in daily_trend:
+        d["revenue"] = round(d["revenue"], 3)
+
+    status_counts = {}
+    for o in orders:
+        status_counts[o["order_status"]] = status_counts.get(o["order_status"], 0) + 1
+    status_distribution = [{"status": k, "count": v} for k, v in status_counts.items()]
+
+    sales_details = []
+    for o in orders:
+        sales_details.append({
+            "order_no": o["order_no"],
+            "placed_at": o.get("placed_at"),
+            "customer_name": o["customer"].get("name"),
+            "customer_phone": o["customer"].get("phone"),
+            "payment_method": o.get("payment_method"),
+            "order_status": o.get("order_status"),
+            "products": ", ".join(f"{it['name_en']} x{it['qty']}" for it in o["items"]),
+            "qty": sum(it["qty"] for it in o["items"]),
+            "subtotal": o.get("subtotal", 0),
+            "delivery_charge": o.get("delivery_charge", 0),
+            "discount_amount": o.get("discount_amount", 0),
+            "net_payable": o.get("net_payable", 0),
+        })
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "currency": CURRENCY,
+        "summary": {
+            "total_orders": len(orders),
+            "completed_orders": completed,
+            "cancelled_orders": cancelled,
+            "pending_orders": pending,
+            "total_revenue": total_revenue,
+            "avg_order_value": avg_order_value,
+            "total_products_sold": total_products_sold,
+            "total_customers": total_customers,
+        },
+        "top_products": top_products,
+        "payment_summary": payment_summary,
+        "daily_trend": daily_trend,
+        "status_distribution": status_distribution,
+        "sales_details": sales_details,
+    }
+
+
 @api.get("/admin/audit-logs")
 async def admin_audit_logs(admin: dict = Depends(require_admin)):
     docs = await db.audit_logs.find({}).sort("created_at", -1).to_list(300)
