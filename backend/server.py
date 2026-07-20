@@ -1157,7 +1157,10 @@ app.add_middleware(
 
 async def seed_admin():
     email = os.environ.get("ADMIN_EMAIL", "faihait@faihacoopkw.com")
-    pwd = os.environ.get("ADMIN_PASSWORD", "admin@faiha2026")
+    pwd = os.environ.get("ADMIN_PASSWORD")
+    if not pwd:
+        logger.warning("ADMIN_PASSWORD not set — skipping admin seed/sync")
+        return
     existing = await db.users.find_one({"email": email})
     if existing is None:
         await db.users.insert_one({"email": email, "password_hash": hash_password(pwd),
