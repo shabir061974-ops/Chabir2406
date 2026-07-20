@@ -154,16 +154,20 @@ def list_products(limit=1000):
 
 
 def fetch_product_master(limit=100000):
-    """Uncached full read of PRODUCT_MASTER for the nightly MongoDB sync.
+    """Uncached full read of PRODUCT_MASTER for the incremental MongoDB sync.
 
-    Returns base dicts (barcode, product_id, name_ar, name_en, price, stock). Oracle now
-    owns both names directly (ITEM_NAME / ITEM_NAME_ENG); category / images / any manual
-    name overrides are still layered on later from admin overrides.
+    Returns base dicts (product_id, barcode, name_ar, name_en, oracle_category_code, price,
+    stock, created_date, updated_date). Oracle owns both names directly (ITEM_NAME /
+    ITEM_NAME_ENG); category / images / any manual name overrides are still layered on later
+    from admin overrides. CATEGORY is a raw numeric POS code with no lookup table (verified:
+    a single value across the whole table) -- kept as oracle_category_code for change-tracking
+    only, never used to derive the storefront category slug.
     """
     if not _available:
         return []
     sql = (
-        "SELECT PRODUCT_ID, ITEM_NAME, ITEM_NAME_ENG, BARCODE, PRICE, AVAILABLE_QUANTITY "
+        "SELECT PRODUCT_ID, ITEM_NAME, ITEM_NAME_ENG, CATEGORY, BARCODE, PRICE, "
+        "AVAILABLE_QUANTITY, CREATED_DATE, UPDATED_DATE "
         f"FROM {_table()} WHERE ROWNUM <= :lim"
     )
     with _pool.acquire() as conn:
@@ -173,15 +177,18 @@ def fetch_product_master(limit=100000):
         rows = cur.fetchall()
         logger.info("Oracle fetch_product_master rows=%d dur=%.3fs", len(rows), time.time() - t0)
         out = []
-        for pid, name_ar, name_eng, barcode, price, qty in rows:
+        for pid, name_ar, name_eng, cat_code, barcode, price, qty, created_dt, updated_dt in rows:
             bc = str(barcode).strip() if barcode is not None else str(pid)
             name_ar = str(name_ar or "").strip()
             name_en = str(name_eng or "").strip() or name_ar
             out.append({
-                "product_id": pid,
+                "product_id": str(pid),
                 "barcode": bc,
                 "name_ar": name_ar,
                 "name_en": name_en,
+                "oracle_category_code": cat_code,
+                "created_date": created_dt.isoformat() if created_dt else None,
+                "updated_date": updated_dt.isoformat() if updated_dt else None,
                 "price": round(float(price or 0), 3),
                 "stock": int(qty or 0),
             })

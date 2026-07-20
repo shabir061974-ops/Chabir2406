@@ -89,9 +89,22 @@ export default function Products() {
                 <div>
                     <h1 className="font-heading font-bold text-2xl">Products</h1>
                     {syncStatus?.last_oracle_sync?.at && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                            Last Oracle sync: {new Date(syncStatus.last_oracle_sync.at).toLocaleString()} · {syncStatus.last_oracle_sync.synced} products
-                        </p>
+                        <div className="text-xs text-muted-foreground mt-0.5" data-testid="oracle-sync-summary">
+                            <p>
+                                Last Oracle sync: {new Date(syncStatus.last_oracle_sync.at).toLocaleString()}
+                                {syncStatus.last_oracle_sync.duration_seconds != null && ` · ${syncStatus.last_oracle_sync.duration_seconds}s`}
+                            </p>
+                            <p>
+                                Inserted {syncStatus.last_oracle_sync.inserted ?? 0} · Updated {syncStatus.last_oracle_sync.updated ?? 0} ·
+                                {" "}Unchanged {syncStatus.last_oracle_sync.unchanged ?? 0} · Removed {syncStatus.last_oracle_sync.removed ?? 0}
+                                {" "}({syncStatus.last_oracle_sync.removed_action || "deactivate"})
+                            </p>
+                            {syncStatus.last_oracle_sync.errors?.length > 0 && (
+                                <p className="text-destructive">
+                                    {syncStatus.last_oracle_sync.errors.length} error(s) — e.g. PRODUCT_ID {syncStatus.last_oracle_sync.errors[0].product_id}: {syncStatus.last_oracle_sync.errors[0].error}
+                                </p>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="flex items-center gap-2">

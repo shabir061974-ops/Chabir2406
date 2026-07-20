@@ -1071,7 +1071,10 @@ async def sync_status(admin: dict = Depends(require_admin)):
     last = await db.sync_state.find_one({"_id": "oracle"})
     last_oracle_sync = None
     if last:
-        last_oracle_sync = {k: last.get(k) for k in ("ok", "synced", "overrides_applied", "removed", "at")}
+        last_oracle_sync = {k: last.get(k) for k in (
+            "ok", "synced", "removed", "at", "started_at", "ended_at", "duration_seconds",
+            "inserted", "updated", "unchanged", "removed_action", "errors",
+        )}
     return {
         "oracle_available": oracle_repo.is_available(),
         "google_sheets_available": google_sheets_repo.is_available(),
