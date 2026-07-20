@@ -23,7 +23,7 @@ with MongoDB for app data. Currency KD (3 decimals).
 
 ## Personas
 - Customer (guest) — browse, search, cart, checkout, track orders.
-- Admin / Super Admin (admin@faiha.coop) — products, orders, categories, coupons, delivery, reports.
+- Admin / Super Admin (faihait@faihacoopkw.com) — products, orders, categories, coupons, delivery, reports.
 
 ## Implemented (2026-06-20)
 - Storefront: home (hero, categories, featured, promotions), catalog (filter/search/sort), product detail.

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 export default function AdminLogin() {
     const { user, login } = useAuth();
     const navigate = useNavigate();
-    const [email, setEmail] = useState("admin@faiha.coop");
+    const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);

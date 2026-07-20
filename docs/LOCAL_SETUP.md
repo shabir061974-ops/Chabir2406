@@ -55,8 +55,8 @@ npm start
 
 ## Login Credentials
 
-- **Email**: admin@faiha.coop
-- **Password**: Faiha@2026
+- **Email**: faihait@faihacoopkw.com
+- **Password**: whatever `ADMIN_PASSWORD` is set to in your local `backend/.env`
 
 ---
 
