@@ -7,16 +7,29 @@ import { useSeo } from "@/hooks/use-seo";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { resolveImageUrl } from "@/lib/image";
 
-// Intrinsic size of the source banner (1536x1024, 3:2) — kept on the <img> so the
+// Intrinsic size of both language banners (1536x1024, 3:2) — kept on the <img> so the
 // browser reserves the right box before the file loads, preventing layout shift.
+// Same single Hero <img>, source picked per language — no separate Hero component.
 const HERO_W = 1536;
 const HERO_H = 1024;
-const HERO_SRCSET = "/hero-cafe-bakery-640.webp 640w, /hero-cafe-bakery-1024.webp 1024w, /hero-cafe-bakery-1536.webp 1536w";
 const HERO_SIZES = "(max-width: 1280px) 100vw, 1280px";
+const HERO_BY_LANG = {
+    en: {
+        src: "/hero-cafe-bakery-1024.webp",
+        srcSet: "/hero-cafe-bakery-640.webp 640w, /hero-cafe-bakery-1024.webp 1024w, /hero-cafe-bakery-1536.webp 1536w",
+        alt: "Faiha Cafe and Bakery — Freshly Brewed Coffee, Freshly Baked Happiness",
+    },
+    ar: {
+        src: "/hero-cafe-bakery-ar-1024.webp",
+        srcSet: "/hero-cafe-bakery-ar-640.webp 640w, /hero-cafe-bakery-ar-1024.webp 1024w, /hero-cafe-bakery-ar-1536.webp 1536w",
+        alt: "مقهى ومخبز الفيحاء — قهوة محضرة طازجة، مخبوزات طازجة، سعادة كل يوم",
+    },
+};
 
 export default function Home() {
     const { t, ln, lang } = useLang();
     const { categories = [] } = useOutletContext();
+    const hero = HERO_BY_LANG[lang] || HERO_BY_LANG.en;
 
     useSeo({
         title: lang === "ar" ? "متجر الفيحاء | جمعية الفيحاء التعاونية" : "Faiha Store | AL-FAIHA CO-OPERATIVE SOCIETY",
@@ -47,12 +60,13 @@ export default function Home() {
             <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
                 <div className="overflow-hidden rounded-3xl">
                     <img
-                        src="/hero-cafe-bakery-1024.webp"
-                        srcSet={HERO_SRCSET}
+                        key={lang}
+                        src={hero.src}
+                        srcSet={hero.srcSet}
                         sizes={HERO_SIZES}
                         width={HERO_W}
                         height={HERO_H}
-                        alt={lang === "ar" ? "مقهى ومخبز الفيحاء — قهوة طازجة ومخبوزات طازجة" : "Faiha Cafe and Bakery — Freshly Brewed Coffee, Freshly Baked Happiness"}
+                        alt={hero.alt}
                         className="w-full h-auto block"
                         loading="eager"
                         fetchPriority="high"
