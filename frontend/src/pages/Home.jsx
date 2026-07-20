@@ -1,15 +1,18 @@
 import { Link, useOutletContext } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import { ArrowRight, Leaf, Truck, CreditCard } from "lucide-react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useSeo } from "@/hooks/use-seo";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { resolveImageUrl } from "@/lib/image";
-import { Button } from "@/components/ui/button";
 
-const HERO = "https://images.unsplash.com/photo-1573246123716-6b1782bfc499?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600";
+// Intrinsic size of the source banner (1536x1024, 3:2) — kept on the <img> so the
+// browser reserves the right box before the file loads, preventing layout shift.
+const HERO_W = 1536;
+const HERO_H = 1024;
+const HERO_SRCSET = "/hero-cafe-bakery-640.webp 640w, /hero-cafe-bakery-1024.webp 1024w, /hero-cafe-bakery-1536.webp 1536w";
+const HERO_SIZES = "(max-width: 1280px) 100vw, 1280px";
 
 export default function Home() {
     const { t, ln, lang } = useLang();
@@ -42,26 +45,20 @@ export default function Home() {
         <div data-testid="home-page">
             {/* Hero */}
             <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
-                <div className="relative overflow-hidden rounded-3xl">
-                    <img src={HERO} alt="Fresh groceries" className="absolute inset-0 w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-forest-dark/90 via-forest/50 to-forest/20" />
-                    <div className="relative px-6 sm:px-12 py-16 sm:py-28 max-w-2xl">
-                        <motion.span initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                            className="inline-block px-3 py-1 rounded-full bg-white/15 text-white text-xs uppercase tracking-[0.2em] font-medium">
-                            Faiha Co-operative Society
-                        </motion.span>
-                        <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-                            className="font-heading font-extrabold text-white text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.05] mt-4">
-                            {t("tagline")}
-                        </motion.h1>
-                        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }} className="mt-8">
-                            <Link to="/products">
-                                <Button data-testid="hero-cta" className="h-12 px-7 rounded-full bg-terracotta hover:bg-terracotta-dark text-white font-semibold text-base gap-2">
-                                    {t("hero_cta")} <ArrowRight className="w-5 h-5 rtl:-scale-x-100" />
-                                </Button>
-                            </Link>
-                        </motion.div>
-                    </div>
+                <div className="overflow-hidden rounded-3xl">
+                    <img
+                        src="/hero-cafe-bakery-1024.webp"
+                        srcSet={HERO_SRCSET}
+                        sizes={HERO_SIZES}
+                        width={HERO_W}
+                        height={HERO_H}
+                        alt={lang === "ar" ? "مقهى ومخبز الفيحاء — قهوة طازجة ومخبوزات طازجة" : "Faiha Cafe and Bakery — Freshly Brewed Coffee, Freshly Baked Happiness"}
+                        className="w-full h-auto block"
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
+                        data-testid="hero-banner"
+                    />
                 </div>
             </section>
 
