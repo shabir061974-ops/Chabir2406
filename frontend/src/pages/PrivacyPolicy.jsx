@@ -18,10 +18,20 @@ export default function PrivacyPolicy() {
             list: [t("pp_s2_li1"), t("pp_s2_li2"), t("pp_s2_li3"), t("pp_s2_li4")],
             after: [t("pp_s2_after")],
         },
+        { title: t("pp_s7_title"), body: [t("pp_s7_body")] },
         { title: t("pp_s3_title"), body: [t("pp_s3_body")] },
         { title: t("pp_s4_title"), body: [t("pp_s4_body")] },
         { title: t("pp_s5_title"), body: [t("pp_s5_body")] },
-        { title: t("pp_s6_title"), body: [t("pp_s6_body")], list: [t("pp_s6_li1"), t("pp_s6_li2")] },
+        { title: t("pp_s8_title"), body: [t("pp_s8_body")] },
+        {
+            title: t("pp_s9_title"),
+            body: [t("pp_s9_body")],
+            list: [t("pp_s9_li1"), t("pp_s9_li2"), t("pp_s9_li3"), t("pp_s9_li4")],
+            after: [t("pp_s9_after")],
+        },
+        { title: t("pp_s10_title"), body: [t("pp_s10_body")] },
+        { title: t("pp_s11_title"), body: [t("pp_s11_body")] },
+        { title: t("pp_s6_title"), body: [t("pp_s6_body")], list: [t("pp_s6_li1"), t("pp_s6_li2"), t("pp_s6_li3")] },
     ];
 
     return (
@@ -30,6 +40,7 @@ export default function PrivacyPolicy() {
                 <div className="mx-auto max-w-4xl px-6 py-14 text-center">
                     <h1 className="font-heading font-extrabold text-3xl sm:text-4xl tracking-tight">{t("privacy_policy")}</h1>
                     <p className="text-white/80 mt-3">{t("legal_name")}</p>
+                    <p className="text-white/60 text-sm mt-2">{t("pp_meta_updated")}</p>
                 </div>
             </section>
 

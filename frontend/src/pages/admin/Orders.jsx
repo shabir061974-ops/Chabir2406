@@ -8,11 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
-const STATUSES = ["pending", "confirmed", "processing", "delivered", "cancelled"];
+const STATUSES = ["NEW", "PREPARING", "READY", "COMPLETED", "CANCELLED"];
 const statusColor = (s) => ({
-    pending: "bg-amber-100 text-amber-700", confirmed: "bg-blue-100 text-blue-700",
-    processing: "bg-purple-100 text-purple-700", delivered: "bg-green-100 text-green-700",
-    cancelled: "bg-red-100 text-red-700",
+    NEW: "bg-blue-100 text-blue-700", PREPARING: "bg-amber-100 text-amber-700",
+    READY: "bg-purple-100 text-purple-700", COMPLETED: "bg-green-100 text-green-700",
+    CANCELLED: "bg-red-100 text-red-700",
 }[s] || "bg-secondary");
 
 export default function Orders() {
@@ -26,6 +26,19 @@ export default function Orders() {
         queryFn: async () => (await api.get(`/admin/orders?status=${status}&q=${encodeURIComponent(q)}`)).data,
     });
 
+    // Status transition rules
+    const allowedTransitions = {
+        NEW: ["PREPARING", "CANCELLED"],
+        PREPARING: ["READY", "CANCELLED"],
+        READY: ["COMPLETED"],
+        COMPLETED: [],
+        CANCELLED: [],
+    };
+
+    const getAvailableActions = (currentStatus) => {
+        return allowedTransitions[currentStatus] || [];
+    };
+
     const updateStatus = async (order_no, newStatus) => {
         try {
             await api.patch(`/admin/orders/${order_no}/status`, { order_status: newStatus });
@@ -33,7 +46,14 @@ export default function Orders() {
             qc.invalidateQueries({ queryKey: ["admin-orders"] });
             qc.invalidateQueries({ queryKey: ["admin-summary"] });
             if (selected?.order_no === order_no) setSelected({ ...selected, order_status: newStatus });
-        } catch { toast.error("Failed to update"); }
+        } catch (e) {
+            const detail = e.response?.data?.detail;
+            if (detail?.message === "invalid_transition") {
+                toast.error(`Cannot change status from ${detail.current_status} to ${detail.requested_status}`);
+            } else {
+                toast.error("Failed to update status");
+            }
+        }
     };
 
     return (
@@ -59,7 +79,7 @@ export default function Orders() {
                     <table className="w-full text-sm">
                         <thead><tr className="text-muted-foreground border-b border-border bg-secondary/40">
                             <th className="text-start font-medium p-3">Order</th><th className="text-start font-medium">Customer</th>
-                            <th className="text-start font-medium">Items</th><th className="text-start font-medium">Total</th>
+                            <th className="text-start font-medium">Items</th><th className="text-start font-medium">Fulfillment</th><th className="text-start font-medium">Total</th>
                             <th className="text-start font-medium">Payment</th><th className="text-start font-medium">Status</th>
                         </tr></thead>
                         <tbody>
@@ -68,17 +88,29 @@ export default function Orders() {
                                     <td className="p-3 font-mono text-xs">{o.order_no}</td>
                                     <td>{o.customer.name}<br /><span className="text-xs text-muted-foreground">{o.customer.phone}</span></td>
                                     <td>{o.items.length}</td>
+                                    <td className="text-xs">
+                                        <div className="flex flex-col gap-1">
+                                            <span className={`px-2 py-0.5 rounded-full ${o.fulfillment_type === 'PICKUP' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{o.fulfillment_type === 'PICKUP' ? 'Pickup' : 'Car Service'}</span>
+                                            {o.fulfillment_type === 'CAR_SERVICE' && o.order_status === 'READY' && (
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${o.car_service_arrived ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    {o.car_service_arrived ? '🚗 Arrived' : '⏳ Waiting'}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="font-semibold">{formatKD(o.net_payable)}</td>
                                     <td><span className={`text-xs px-2 py-0.5 rounded-full ${o.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-secondary'}`}>{o.payment_method}</span></td>
                                     <td onClick={(e) => e.stopPropagation()}>
                                         <Select value={o.order_status} onValueChange={(v) => updateStatus(o.order_no, v)}>
                                             <SelectTrigger className={`w-32 h-8 text-xs border-0 ${statusColor(o.order_status)}`} data-testid={`status-select-${o.order_no}`}><SelectValue /></SelectTrigger>
-                                            <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                                            <SelectContent>
+                                                {getAvailableActions(o.order_status).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                            </SelectContent>
                                         </Select>
                                     </td>
                                 </tr>
                             ))}
-                            {!isLoading && orders.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-muted-foreground">No orders found</td></tr>}
+                            {!isLoading && orders.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No orders found</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -93,12 +125,48 @@ export default function Orders() {
                                 <div className="bg-secondary/40 rounded-xl p-3">
                                     <p className="font-semibold">{selected.customer.name} · {selected.customer.phone}</p>
                                     <p className="text-muted-foreground">{selected.customer.address}, {selected.customer.area}</p>
+                                    {selected.customer.shareholder_number && <p className="text-muted-foreground mt-1">Shareholder #: {selected.customer.shareholder_number}</p>}
                                     {selected.customer.notes && <p className="text-muted-foreground mt-1">Note: {selected.customer.notes}</p>}
+                                    {selected.fulfillment_type && (
+                                        <div className="mt-2 pt-2 border-t border-muted-foreground/20">
+                                            <p className="text-muted-foreground"><strong>Fulfillment:</strong> {selected.fulfillment_type === "PICKUP" ? "Pickup" : "Car Service"}</p>
+                                            {selected.fulfillment_type === "CAR_SERVICE" && (
+                                                <>
+                                                    {selected.vehicle_number && <p className="text-muted-foreground mt-1">Vehicle #: {selected.vehicle_number}</p>}
+                                                    {selected.vehicle_color && <p className="text-muted-foreground mt-1">Vehicle Color: {selected.vehicle_color}</p>}
+                                                    {selected.order_status === "READY" && (
+                                                        <div className="mt-3 pt-2 border-t border-muted-foreground/20">
+                                                            {selected.car_service_arrived ? (
+                                                                <p className="text-green-700 font-semibold text-sm">🚗 CUSTOMER HAS ARRIVED</p>
+                                                            ) : (
+                                                                <p className="text-amber-700 font-semibold text-sm">⏳ Waiting for Customer</p>
+                                                            )}
+                                                            {selected.car_service_arrived_at && (
+                                                                <p className="text-xs text-muted-foreground mt-1">
+                                                                    Arrived: {new Date(selected.car_service_arrived_at).toLocaleString()}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                     {selected.delivery_slot && <p className="text-muted-foreground mt-1">Slot: {selected.delivery_slot}</p>}
                                 </div>
                                 <div className="space-y-2">
                                     {selected.items.map((it, i) => (
-                                        <div key={`${it.product_id}-${i}`} className="flex justify-between"><span>{it.name_en} × {it.qty}</span><span className="font-semibold">{formatKD(it.line_total)}</span></div>
+                                        <div key={`${it.product_id}-${i}`} className="flex justify-between">
+                                            <span>
+                                                {it.name_en} × {it.qty}
+                                                {it.addons?.length > 0 && (
+                                                    <span className="block text-xs text-muted-foreground">
+                                                        {it.addons.map((a) => a.item_name_en).join(", ")}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="font-semibold">{formatKD(it.line_total)}</span>
+                                        </div>
                                     ))}
                                 </div>
                                 <div className="border-t border-border pt-2 space-y-1">

@@ -38,20 +38,25 @@ export const CartDrawer = () => {
                     <>
                         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
                             {items.map((it) => (
-                                <div key={it.product_id} className="flex gap-3" data-testid={`cart-item-${it.product_id}`}>
+                                <div key={it.line_id} className="flex gap-3" data-testid={`cart-item-${it.line_id}`}>
                                     <div className="w-16 h-16 rounded-xl overflow-hidden bg-secondary shrink-0">
                                         {it.image && <img src={resolveImageUrl(it.image)} alt="" className="w-full h-full object-cover" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm line-clamp-1">{ln(it)}</p>
+                                        {it.addons?.length > 0 && (
+                                            <p className="text-xs text-muted-foreground line-clamp-2">
+                                                {it.addons.map((a) => ln(a)).join(", ")}
+                                            </p>
+                                        )}
                                         <p className="text-forest font-bold text-sm">{formatKD(it.unit_price)}</p>
                                         <div className="mt-1 flex items-center gap-2">
                                             <div className="flex items-center gap-1 rounded-full border border-border">
-                                                <button onClick={() => updateQty(it.product_id, it.qty - 1)} className="grid place-items-center w-7 h-7" data-testid={`cart-dec-${it.product_id}`}><Minus className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => updateQty(it.line_id, it.qty - 1)} className="grid place-items-center w-7 h-7" data-testid={`cart-dec-${it.line_id}`}><Minus className="w-3.5 h-3.5" /></button>
                                                 <span className="w-6 text-center text-sm font-semibold font-mono">{it.qty}</span>
-                                                <button onClick={() => updateQty(it.product_id, it.qty + 1)} className="grid place-items-center w-7 h-7" data-testid={`cart-inc-${it.product_id}`}><Plus className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => updateQty(it.line_id, it.qty + 1)} className="grid place-items-center w-7 h-7" data-testid={`cart-inc-${it.line_id}`}><Plus className="w-3.5 h-3.5" /></button>
                                             </div>
-                                            <button onClick={() => removeItem(it.product_id)} className="text-muted-foreground hover:text-destructive ms-auto" data-testid={`cart-remove-${it.product_id}`}>
+                                            <button onClick={() => removeItem(it.line_id)} className="text-muted-foreground hover:text-destructive ms-auto" data-testid={`cart-remove-${it.line_id}`}>
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>

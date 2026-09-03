@@ -10,6 +10,7 @@ import { formatKD } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProductAddons } from "@/components/storefront/ProductAddons";
 import { toast } from "sonner";
 
 export default function ProductDetail() {
@@ -17,10 +18,19 @@ export default function ProductDetail() {
     const { t, ln } = useLang();
     const { addItem } = useCart();
     const [qty, setQty] = useState(1);
+    const [addonSelection, setAddonSelection] = useState({ items: [], valid: true });
 
     const { data: p, isLoading } = useQuery({
         queryKey: ["product", id],
         queryFn: async () => (await api.get(`/product`.replace("/product", `/products/${id}`))).data,
+    });
+
+    // Empty when nothing is configured for this product -- the section below is hidden
+    // and the page behaves exactly as it did before add-ons existed.
+    const { data: addonGroups = [] } = useQuery({
+        queryKey: ["product-addons", id],
+        queryFn: async () => (await api.get(`/products/${id}/addons`)).data,
+        enabled: !!p?.has_addons,
     });
 
     useSeo({
@@ -38,7 +48,12 @@ export default function ProductDetail() {
     if (!p) return <div className="py-24 text-center text-muted-foreground">{t("no_products")}</div>;
 
     const soldOut = p.stock <= 0;
-    const onAdd = () => { addItem(p, qty); toast.success(`${ln(p)} ${t("added")}`); };
+    const addonsTotal = addonSelection.items.reduce((s, a) => s + (a.price || 0), 0);
+    const onAdd = () => {
+        if (!addonSelection.valid) { toast.error(t("select_required_options")); return; }
+        addItem(p, qty, addonSelection.items);
+        toast.success(`${ln(p)} ${t("added")}`);
+    };
 
     return (
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8" data-testid="product-detail-page">
@@ -57,7 +72,7 @@ export default function ProductDetail() {
                     <p className="text-muted-foreground mt-1">{ln({ name_en: p.unit_en, name_ar: p.unit_ar })}</p>
 
                     <div className="flex items-end gap-3 mt-5">
-                        <span className="font-heading font-extrabold text-3xl text-forest" data-testid="detail-price">{formatKD(p.effective_price ?? p.price)}</span>
+                        <span className="font-heading font-extrabold text-3xl text-forest" data-testid="detail-price">{formatKD((p.effective_price ?? p.price) + addonsTotal)}</span>
                         {p.discount > 0 && <span className="text-lg text-muted-foreground line-through mb-1">{formatKD(p.price)}</span>}
                     </div>
 
@@ -69,6 +84,8 @@ export default function ProductDetail() {
 
                     {p.barcode && <p className="mt-2 text-xs text-muted-foreground font-mono">Barcode: {p.barcode}</p>}
 
+                    {addonGroups.length > 0 && <ProductAddons groups={addonGroups} onChange={setAddonSelection} />}
+
                     {!soldOut && (
                         <div className="mt-8 flex items-center gap-4">
                             <div className="flex items-center rounded-full border border-border h-12 px-2">
@@ -76,7 +93,7 @@ export default function ProductDetail() {
                                 <span className="w-10 text-center font-bold font-mono" data-testid="detail-qty">{qty}</span>
                                 <button onClick={() => setQty((q) => Math.min(p.stock, q + 1))} className="grid place-items-center w-9 h-9" data-testid="detail-qty-inc"><Plus className="w-4 h-4" /></button>
                             </div>
-                            <Button onClick={onAdd} data-testid="detail-add-to-cart" className="flex-1 h-12 rounded-full bg-forest hover:bg-forest-dark text-white font-semibold gap-2">
+                            <Button onClick={onAdd} disabled={!addonSelection.valid} data-testid="detail-add-to-cart" className="flex-1 h-12 rounded-full bg-forest hover:bg-forest-dark text-white font-semibold gap-2">
                                 <ShoppingCart className="w-5 h-5" /> {t("add_to_cart")}
                             </Button>
                         </div>

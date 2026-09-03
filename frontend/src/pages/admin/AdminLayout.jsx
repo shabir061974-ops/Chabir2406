@@ -1,13 +1,15 @@
 import { NavLink, Outlet, useNavigate, Navigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Tags, Ticket, Truck, Users, BarChart3, LogOut, Store } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Tags, Ticket, Truck, Users, BarChart3, LogOut, Store, Sparkles } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import NotificationBell from "@/components/admin/NotificationBell";
 
 const NAV = [
     { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/orders", icon: ShoppingCart, label: "Orders" },
     { to: "/admin/products", icon: Package, label: "Products" },
     { to: "/admin/categories", icon: Tags, label: "Categories" },
+    { to: "/admin/addons", icon: Sparkles, label: "Add-ons" },
     { to: "/admin/coupons", icon: Ticket, label: "Coupons" },
     { to: "/admin/delivery", icon: Truck, label: "Delivery" },
     { to: "/admin/customers", icon: Users, label: "Customers" },
@@ -45,10 +47,21 @@ export default function AdminLayout() {
             </aside>
 
             <div className="flex-1 md:ms-60 min-w-0">
+                {/* desktop top bar with notifications */}
+                <div className="hidden md:flex items-center justify-between bg-white border-b border-border px-6 h-16">
+                    <div />
+                    <div className="flex items-center gap-4">
+                        <NotificationBell />
+                        <Button size="sm" variant="ghost" onClick={doLogout}><LogOut className="w-4 h-4" /></Button>
+                    </div>
+                </div>
                 {/* mobile top bar */}
                 <div className="md:hidden flex items-center justify-between bg-forest text-white px-4 h-14">
                     <span className="font-heading font-bold">Faiha Admin</span>
-                    <Button size="sm" variant="ghost" onClick={doLogout} className="text-white"><LogOut className="w-4 h-4" /></Button>
+                    <div className="flex items-center gap-2">
+                        <NotificationBell />
+                        <Button size="sm" variant="ghost" onClick={doLogout} className="text-white"><LogOut className="w-4 h-4" /></Button>
+                    </div>
                 </div>
                 <div className="md:hidden flex gap-1 overflow-x-auto px-2 py-2 bg-white border-b border-border">
                     {NAV.map((n) => (

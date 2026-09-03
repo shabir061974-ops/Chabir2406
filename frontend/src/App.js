@@ -25,6 +25,7 @@ import Dashboard from "@/pages/admin/Dashboard";
 import Orders from "@/pages/admin/Orders";
 import Products from "@/pages/admin/Products";
 import Categories from "@/pages/admin/Categories";
+import AddonGroups from "@/pages/admin/AddonGroups";
 import Coupons from "@/pages/admin/Coupons";
 import DeliveryConfig from "@/pages/admin/DeliveryConfig";
 import Customers from "@/pages/admin/Customers";
@@ -64,6 +65,7 @@ function App() {
                                 <Route path="orders" element={<Orders />} />
                                 <Route path="products" element={<Products />} />
                                 <Route path="categories" element={<Categories />} />
+                                <Route path="addons" element={<AddonGroups />} />
                                 <Route path="coupons" element={<Coupons />} />
                                 <Route path="delivery" element={<DeliveryConfig />} />
                                 <Route path="customers" element={<Customers />} />

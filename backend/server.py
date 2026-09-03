@@ -31,6 +31,7 @@ import oracle_repo
 import oracle_sync
 import google_sheets_repo
 import seed_data
+import addons
 
 # ----------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -121,6 +122,40 @@ def clean(doc):
 
 def gen_order_no():
     return f"FAIHA-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+
+async def create_staff_notification(notification_type: str, order_no: str, order_id, customer_name: str,
+                                   fulfillment_type: Optional[str] = None, vehicle_number: Optional[str] = None,
+                                   vehicle_color: Optional[str] = None, payment_method: Optional[str] = None,
+                                   arrival_time: Optional[str] = None):
+    """Create a staff notification for important order events. Idempotent: prevents duplicate notifications."""
+    # Prevent duplicate notifications
+    # Check if a notification of this type already exists for this order within the last 30 seconds
+    existing = await db.staff_notifications.find_one({
+        "type": notification_type,
+        "order_no": order_no,
+        "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()}
+    })
+    if existing:
+        return existing
+
+    # Create notification
+    notif = {
+        "type": notification_type,
+        "order_no": order_no,
+        "order_id": order_id,
+        "customer_name": customer_name,
+        "fulfillment_type": fulfillment_type,
+        "vehicle_number": vehicle_number,
+        "vehicle_color": vehicle_color,
+        "payment_method": payment_method,
+        "arrival_time": arrival_time,
+        "created_at": now_iso(),
+        "read": False,
+    }
+    res = await db.staff_notifications.insert_one(notif)
+    notif["_id"] = res.inserted_id
+    return notif
 
 
 async def get_current_user(request: Request) -> dict:
@@ -228,6 +263,11 @@ class CartItemIn(BaseModel):
     qty: int
     unit_price: float
     source: str = "local"
+    # Selected add-on item ids (e.g. Oat Milk, Extra Espresso). Prices/names are always
+    # re-resolved from the DB server-side -- never trusted from the client. Capped well
+    # above any real customization (largest configured group set today is a handful of
+    # groups) so an oversized array can't be used to inflate query cost.
+    addon_item_ids: List[str] = Field(default_factory=list, max_length=20)
 
 
 class CustomerInfo(BaseModel):
@@ -239,12 +279,16 @@ class CustomerInfo(BaseModel):
     address: Optional[str] = ""
     area: Optional[str] = ""
     notes: Optional[str] = None
+    shareholder_number: Optional[str] = None
 
 
 class PlaceOrderInput(BaseModel):
     items: List[CartItemIn]
     customer: CustomerInfo
     payment_method: str  # COD | KNET
+    fulfillment_type: str = "PICKUP"  # PICKUP | CAR_SERVICE
+    vehicle_number: Optional[str] = None
+    vehicle_color: Optional[str] = None
     coupon_code: Optional[str] = None
     delivery_slot: Optional[str] = None
     lang: str = "en"
@@ -306,6 +350,23 @@ class DeliveryConfigIn(BaseModel):
 
 class StatusUpdateIn(BaseModel):
     order_status: str
+
+
+class StaffNotificationOut(BaseModel):
+    id: str = Field(..., alias="id")
+    type: str
+    order_no: str
+    customer_name: str
+    fulfillment_type: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    payment_method: Optional[str] = None
+    arrival_time: Optional[str] = None
+    created_at: str
+    read: bool = False
+
+    class Config:
+        populate_by_name = True
 
 
 # ============================== Catalog ====================================
@@ -446,6 +507,9 @@ async def get_products(
     items = [clean(d) for d in docs]
     for it in items:
         it["effective_price"] = _eff_price(it)
+    has_addons_set = await addons.compute_has_addons_set(db, items)
+    for it in items:
+        it["has_addons"] = it["id"] in has_addons_set
 
     # Oracle PRODUCT_MASTER products are materialized into products_local by the nightly
     # oracle_sync job (source='oracle'), so they're already in `docs` above — no live merge here.
@@ -493,6 +557,7 @@ async def get_product(id_or_barcode: str):
         raise HTTPException(status_code=404, detail="Product not found")
     item = clean(doc)
     item["effective_price"] = _eff_price(item)
+    item["has_addons"] = bool(await addons.get_product_addons(db, item))
     return item
 
 
@@ -525,7 +590,14 @@ async def _validate_items(items):
         if available < it.qty:
             errors.append({"product_id": it.product_id, "name": prod["name_en"], "reason": "insufficient_stock", "available": available})
             continue
-        validated.append({"prod": prod, "qty": it.qty, "unit_price": _eff_price(prod)})
+        addon_lines, addon_total, addon_errors = await addons.resolve_selected_addons(db, prod, it.addon_item_ids)
+        if addon_errors:
+            errors.append({"product_id": it.product_id, "name": prod.get("name_en"), "reason": "invalid_addons", "detail": addon_errors})
+            continue
+        validated.append({
+            "prod": prod, "qty": it.qty, "unit_price": _eff_price(prod),
+            "addon_lines": addon_lines, "addon_total": addon_total,
+        })
     return validated, errors
 
 
@@ -547,6 +619,18 @@ async def _apply_coupon(code, subtotal):
 @api.post("/checkout/place-order")
 @limiter.limit("15/minute")
 async def place_order(payload: PlaceOrderInput, request: Request):
+    # Validate fulfillment type
+    fulfillment_type = payload.fulfillment_type.upper()
+    if fulfillment_type not in ("PICKUP", "CAR_SERVICE"):
+        raise HTTPException(status_code=400, detail={"message": "invalid_fulfillment_type"})
+
+    # Validate vehicle details for CAR_SERVICE
+    if fulfillment_type == "CAR_SERVICE":
+        if not payload.vehicle_number or not payload.vehicle_number.strip():
+            raise HTTPException(status_code=400, detail={"message": "vehicle_details_required", "field": "vehicle_number"})
+        if not payload.vehicle_color or not payload.vehicle_color.strip():
+            raise HTTPException(status_code=400, detail={"message": "vehicle_details_required", "field": "vehicle_color"})
+
     validated, errors = await _validate_items(payload.items)
     if errors:
         raise HTTPException(status_code=400, detail={"message": "stock_validation_failed", "errors": errors})
@@ -556,7 +640,12 @@ async def place_order(payload: PlaceOrderInput, request: Request):
     order_items = []
     subtotal = 0.0
     for v in validated:
-        line = round(v["unit_price"] * v["qty"], 3)
+        addon_total = v.get("addon_total", 0.0)
+        # unit_price is what the customer actually pays per unit (base + add-ons), so
+        # every existing consumer of order_items.unit_price/line_total (admin UI,
+        # reports, PDF export) keeps working unchanged; base_price/addons are additive.
+        effective_unit_price = round(v["unit_price"] + addon_total, 3)
+        line = round(effective_unit_price * v["qty"], 3)
         subtotal += line
         order_items.append({
             "product_id": str(v["prod"]["_id"]),
@@ -565,7 +654,10 @@ async def place_order(payload: PlaceOrderInput, request: Request):
             "name_ar": v["prod"]["name_ar"],
             "image": (v["prod"].get("images") or [None])[0],
             "qty": v["qty"],
-            "unit_price": v["unit_price"],
+            "unit_price": effective_unit_price,
+            "base_price": v["unit_price"],
+            "addons": v.get("addon_lines", []),
+            "addon_total": addon_total,
             "line_total": line,
             "source": v["prod"].get("source", "local"),
         })
@@ -584,13 +676,17 @@ async def place_order(payload: PlaceOrderInput, request: Request):
 
     net_payable = round(subtotal - discount_amount + delivery_charge, 3)
 
-    # Only Cash is accepted right now. KNET is temporarily disabled.
+    # Payment method selection for physical collection by Faiha staff
     pm_raw = payload.payment_method.upper()
-    if pm_raw == "KNET":
-        raise HTTPException(status_code=400, detail={"message": "knet_unavailable"})
-    pm = "Cash"  # normalize COD/CASH -> Cash
+    if pm_raw in ("COD", "CASH"):
+        pm = "Cash"
+    elif pm_raw == "KNET":
+        pm = "KNET"
+    else:
+        raise HTTPException(status_code=400, detail={"message": "invalid_payment_method"})
+
     payment_status = "pending"
-    order_status = "confirmed"
+    order_status = "NEW"  # New orders start as NEW
 
     order_no = gen_order_no()
     while await db.orders.find_one({"order_no": order_no}):
@@ -609,6 +705,9 @@ async def place_order(payload: PlaceOrderInput, request: Request):
         "payment_method": pm,
         "payment_status": payment_status,
         "order_status": order_status,
+        "fulfillment_type": fulfillment_type,
+        "vehicle_number": (payload.vehicle_number.strip() if payload.vehicle_number else None) if fulfillment_type == "CAR_SERVICE" else None,
+        "vehicle_color": (payload.vehicle_color.strip() if payload.vehicle_color else None) if fulfillment_type == "CAR_SERVICE" else None,
         "delivery_slot": payload.delivery_slot,
         "lang": payload.lang,
         "placed_at": now_iso(),
@@ -625,15 +724,22 @@ async def place_order(payload: PlaceOrderInput, request: Request):
     order_doc["id"] = str(res.inserted_id)
     order_doc.pop("_id", None)
 
-    knet_redirect = None
-    if pm == "KNET":
-        await db.payments.insert_one({
-            "order_id": str(res.inserted_id), "order_no": order_no, "gateway": "KNET",
-            "amount": net_payable, "result": "PENDING", "created_at": now_iso(),
-        })
-        knet_redirect = f"/payment/knet/{order_no}"
+    # Payment will be collected physically by Faiha staff (CASH or KNET)
+    # No online payment gateway is triggered
 
-    return {"order": order_doc, "knet_redirect": knet_redirect}
+    # Create staff notification for new order
+    await create_staff_notification(
+        notification_type="new_order",
+        order_no=order_no,
+        order_id=res.inserted_id,
+        customer_name=payload.customer.name,
+        fulfillment_type=fulfillment_type,
+        vehicle_number=(payload.vehicle_number.strip() if payload.vehicle_number else None) if fulfillment_type == "CAR_SERVICE" else None,
+        vehicle_color=(payload.vehicle_color.strip() if payload.vehicle_color else None) if fulfillment_type == "CAR_SERVICE" else None,
+        payment_method=pm
+    )
+
+    return {"order": order_doc}
 
 
 @api.post("/payments/knet/callback")
@@ -652,7 +758,7 @@ async def knet_callback(payload: KnetCallbackInput):
     await db.orders.update_one(
         {"order_no": payload.order_no},
         {"$set": {"payment_status": "paid" if captured else "failed",
-                  "order_status": "confirmed" if captured else "cancelled",
+                  "order_status": "CANCELLED" if not captured else order.get("order_status", "NEW"),
                   "updated_at": now_iso()}},
     )
     order = await db.orders.find_one({"order_no": payload.order_no})
@@ -666,6 +772,64 @@ async def track_order(order_no: str, phone: Optional[str] = None):
         raise HTTPException(status_code=404, detail="Order not found")
     if phone and order["customer"].get("phone") != phone:
         raise HTTPException(status_code=403, detail="Phone does not match order")
+    return clean(order)
+
+
+@api.post("/orders/{order_no}/car-service-arrival")
+async def mark_car_service_arrival(order_no: str, phone: Optional[str] = None):
+    """Mark that a car service customer has arrived at the parking area."""
+    order = await db.orders.find_one({"order_no": order_no})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Verify phone matches for security
+    if phone and order["customer"].get("phone") != phone:
+        raise HTTPException(status_code=403, detail="Phone does not match order")
+
+    # Only CAR_SERVICE orders can mark arrival
+    if order.get("fulfillment_type") != "CAR_SERVICE":
+        raise HTTPException(status_code=400, detail={
+            "message": "arrival_only_for_car_service",
+            "fulfillment_type": order.get("fulfillment_type")
+        })
+
+    # Only READY orders can mark arrival
+    if order.get("order_status") != "READY":
+        raise HTTPException(status_code=400, detail={
+            "message": "arrival_only_when_ready",
+            "order_status": order.get("order_status")
+        })
+
+    # If already marked as arrived, don't update (idempotent)
+    if order.get("car_service_arrived"):
+        return clean(order)
+
+    # Mark arrival
+    arrival_time = now_iso()
+    await db.orders.update_one(
+        {"order_no": order_no},
+        {"$set": {
+            "car_service_arrived": True,
+            "car_service_arrived_at": arrival_time,
+            "updated_at": arrival_time
+        }}
+    )
+
+    order = await db.orders.find_one({"order_no": order_no})
+
+    # Create staff notification for car service arrival
+    await create_staff_notification(
+        notification_type="customer_arrived",
+        order_no=order_no,
+        order_id=order["_id"],
+        customer_name=order["customer"]["name"],
+        fulfillment_type="CAR_SERVICE",
+        vehicle_number=order.get("vehicle_number"),
+        vehicle_color=order.get("vehicle_color"),
+        payment_method=order.get("payment_method"),
+        arrival_time=arrival_time
+    )
+
     return clean(order)
 
 
@@ -799,9 +963,9 @@ async def customer_orders(customer: dict = Depends(get_current_customer)):
 async def admin_summary(admin: dict = Depends(require_admin)):
     orders = await db.orders.find({}).to_list(5000)
     total_orders = len(orders)
-    revenue = sum(o["net_payable"] for o in orders if o.get("payment_status") == "paid" or o.get("payment_method") == "COD")
-    pending = sum(1 for o in orders if o["order_status"] == "pending")
-    delivered = sum(1 for o in orders if o["order_status"] == "delivered")
+    revenue = sum(o["net_payable"] for o in orders if o.get("payment_status") == "paid" or o.get("payment_method") == "Cash")
+    pending = sum(1 for o in orders if o.get("order_status") in ("NEW", "PREPARING", "READY"))
+    delivered = sum(1 for o in orders if o["order_status"] == "COMPLETED")
     products_count = await db.products_local.count_documents({"is_active": True})
     # revenue last 7 days
     today = datetime.now(timezone.utc).date()
@@ -848,16 +1012,81 @@ async def admin_orders(status: Optional[str] = None, q: Optional[str] = None, ad
 
 @api.patch("/admin/orders/{order_no}/status")
 async def update_order_status(order_no: str, payload: StatusUpdateIn, request: Request, admin: dict = Depends(require_admin)):
-    valid = {"pending", "confirmed", "processing", "delivered", "cancelled"}
-    if payload.order_status not in valid:
+    valid_statuses = {"NEW", "PREPARING", "READY", "COMPLETED", "CANCELLED"}
+    if payload.order_status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Invalid status")
+
     order = await db.orders.find_one({"order_no": order_no})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    await db.orders.update_one({"order_no": order_no}, {"$set": {"order_status": payload.order_status, "updated_at": now_iso()}})
-    await audit(admin, "update_status", "order", order_no, request, {"status": order["order_status"]}, {"status": payload.order_status})
+
+    current_status = order.get("order_status", "NEW")
+    new_status = payload.order_status
+
+    # Define allowed status transitions
+    allowed_transitions = {
+        "NEW": {"PREPARING", "CANCELLED"},
+        "PREPARING": {"READY", "CANCELLED"},
+        "READY": {"COMPLETED"},
+        "COMPLETED": set(),  # No transitions from completed
+        "CANCELLED": set(),  # No transitions from cancelled
+    }
+
+    # Check if transition is allowed
+    if new_status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(status_code=400, detail={
+            "message": "invalid_transition",
+            "current_status": current_status,
+            "requested_status": new_status
+        })
+
+    await db.orders.update_one({"order_no": order_no}, {"$set": {"order_status": new_status, "updated_at": now_iso()}})
+    await audit(admin, "update_status", "order", order_no, request, {"status": current_status}, {"status": new_status})
     order = await db.orders.find_one({"order_no": order_no})
     return clean(order)
+
+
+@api.get("/admin/notifications")
+async def get_staff_notifications(admin: dict = Depends(require_admin)):
+    """Fetch recent staff notifications (unread + last 50 read). Returns newest first."""
+    # Get all unread notifications
+    unread = await db.staff_notifications.find({"read": False}).sort("created_at", -1).to_list(1000)
+    # Get last 50 read notifications for context
+    read = await db.staff_notifications.find({"read": True}).sort("created_at", -1).to_list(50)
+    # Combine and deduplicate by keeping unread priority
+    all_notifs = unread + read
+    seen_orders = set()
+    result = []
+    for n in all_notifs:
+        order_no = n["order_no"]
+        if order_no not in seen_orders:
+            result.append(clean(n))
+            seen_orders.add(order_no)
+    return result[:100]  # Return max 100 notifications
+
+
+@api.patch("/admin/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, admin: dict = Depends(require_admin)):
+    """Mark a single notification as read."""
+    try:
+        await db.staff_notifications.update_one(
+            {"_id": ObjectId(notification_id)},
+            {"$set": {"read": True}}
+        )
+        notif = await db.staff_notifications.find_one({"_id": ObjectId(notification_id)})
+        return clean(notif)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notification ID")
+
+
+@api.patch("/admin/notifications/read-all")
+async def mark_all_notifications_read(admin: dict = Depends(require_admin)):
+    """Mark all notifications as read."""
+    result = await db.staff_notifications.update_many(
+        {"read": False},
+        {"$set": {"read": True}}
+    )
+    return {"modified_count": result.modified_count}
 
 
 @api.post("/admin/upload")
@@ -1083,10 +1312,10 @@ async def admin_sales_report(date_from: str, date_to: str, admin: dict = Depends
         {"placed_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}
     ).sort("placed_at", 1).to_list(50000)
 
-    completed = sum(1 for o in orders if o["order_status"] == "delivered")
-    cancelled = sum(1 for o in orders if o["order_status"] == "cancelled")
-    pending = sum(1 for o in orders if o["order_status"] == "pending")
-    revenue_orders = [o for o in orders if o["order_status"] != "cancelled"]
+    completed = sum(1 for o in orders if o["order_status"] == "COMPLETED")
+    cancelled = sum(1 for o in orders if o["order_status"] == "CANCELLED")
+    pending = sum(1 for o in orders if o.get("order_status") in ("NEW", "PREPARING", "READY"))
+    revenue_orders = [o for o in orders if o.get("order_status") != "CANCELLED"]
     total_revenue = round(sum(o["net_payable"] for o in revenue_orders), 3)
     avg_order_value = round(total_revenue / len(revenue_orders), 3) if revenue_orders else 0
     total_products_sold = sum(it["qty"] for o in revenue_orders for it in o["items"])
@@ -1248,6 +1477,142 @@ async def backup_status(admin: dict = Depends(require_admin)):
     return {"last_backup": {k: last.get(k) for k in ("trigger", "at", "db_file", "db_size", "uploads_file", "uploads_size")}}
 
 
+# ============================== Product Add-ons =============================
+# Business logic + Mongo access lives in addons.py (new collections only, Oracle
+# untouched); these are thin routes reusing this file's own auth/audit/clean helpers.
+
+@api.get("/products/{product_id}/addons")
+async def product_addons(product_id: str):
+    if not ObjectId.is_valid(product_id):
+        return []
+    product = await db.products_local.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        return []
+    return await addons.get_product_addons(db, clean(product))
+
+
+@api.get("/admin/addon-groups")
+async def admin_list_addon_groups(admin: dict = Depends(require_admin)):
+    docs = await db.addon_groups.find({}).sort([("display_order", 1), ("name_en", 1)]).to_list(500)
+    return [clean(d) for d in docs]
+
+
+@api.post("/admin/addon-groups")
+async def admin_create_addon_group(payload: addons.AddonGroupIn, request: Request, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc["created_at"] = doc["updated_at"] = now_iso()
+    res = await db.addon_groups.insert_one(doc)
+    await audit(admin, "create", "addon_group", res.inserted_id, request)
+    return clean(await db.addon_groups.find_one({"_id": res.inserted_id}))
+
+
+@api.put("/admin/addon-groups/{gid}")
+async def admin_update_addon_group(gid: str, payload: addons.AddonGroupIn, request: Request, admin: dict = Depends(require_admin)):
+    if not ObjectId.is_valid(gid):
+        raise HTTPException(status_code=400, detail="Invalid id")
+    doc = payload.model_dump()
+    doc["updated_at"] = now_iso()
+    await db.addon_groups.update_one({"_id": ObjectId(gid)}, {"$set": doc})
+    await audit(admin, "update", "addon_group", gid, request)
+    return clean(await db.addon_groups.find_one({"_id": ObjectId(gid)}))
+
+
+@api.delete("/admin/addon-groups/{gid}")
+async def admin_delete_addon_group(gid: str, request: Request, admin: dict = Depends(require_admin)):
+    if not ObjectId.is_valid(gid):
+        raise HTTPException(status_code=400, detail="Invalid id")
+    # Historical orders embed a full snapshot of each add-on line (name/price at the
+    # time of purchase), so they never depend on this group/its items still existing --
+    # but we still avoid hard-deleting something referenced by a past order, so admin
+    # tooling and audit trails can still resolve "what group was this order line part
+    # of" rather than pointing at a vanished id. Deactivate instead in that case.
+    if await db.orders.find_one({"items.addons.group_id": gid}):
+        await db.addon_groups.update_one({"_id": ObjectId(gid)}, {"$set": {"is_active": False, "updated_at": now_iso()}})
+        await db.addon_items.update_many({"group_id": gid}, {"$set": {"is_active": False, "updated_at": now_iso()}})
+        await audit(admin, "deactivate", "addon_group", gid, request)
+        return {"ok": True, "soft_deleted": True, "message": "This group is used in past orders, so it was deactivated instead of deleted."}
+    await db.addon_groups.delete_one({"_id": ObjectId(gid)})
+    await db.addon_items.delete_many({"group_id": gid})
+    # Cleanup: drop the now-dangling id out of any category/product mapping that referenced it.
+    await db.category_addon_groups.update_many({}, {"$pull": {"group_ids": gid}})
+    await db.product_addon_groups.update_many({}, {"$pull": {"group_ids": gid}})
+    await audit(admin, "delete", "addon_group", gid, request)
+    return {"ok": True, "soft_deleted": False}
+
+
+@api.get("/admin/addon-items")
+async def admin_list_addon_items(group_id: Optional[str] = None, admin: dict = Depends(require_admin)):
+    query = {"group_id": group_id} if group_id else {}
+    docs = await db.addon_items.find(query).sort([("display_order", 1), ("name_en", 1)]).to_list(2000)
+    return [clean(d) for d in docs]
+
+
+@api.post("/admin/addon-items")
+async def admin_create_addon_item(payload: addons.AddonItemIn, request: Request, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc["created_at"] = doc["updated_at"] = now_iso()
+    res = await db.addon_items.insert_one(doc)
+    await audit(admin, "create", "addon_item", res.inserted_id, request)
+    return clean(await db.addon_items.find_one({"_id": res.inserted_id}))
+
+
+@api.put("/admin/addon-items/{iid}")
+async def admin_update_addon_item(iid: str, payload: addons.AddonItemIn, request: Request, admin: dict = Depends(require_admin)):
+    if not ObjectId.is_valid(iid):
+        raise HTTPException(status_code=400, detail="Invalid id")
+    doc = payload.model_dump()
+    doc["updated_at"] = now_iso()
+    await db.addon_items.update_one({"_id": ObjectId(iid)}, {"$set": doc})
+    await audit(admin, "update", "addon_item", iid, request)
+    return clean(await db.addon_items.find_one({"_id": ObjectId(iid)}))
+
+
+@api.delete("/admin/addon-items/{iid}")
+async def admin_delete_addon_item(iid: str, request: Request, admin: dict = Depends(require_admin)):
+    if not ObjectId.is_valid(iid):
+        raise HTTPException(status_code=400, detail="Invalid id")
+    if await db.orders.find_one({"items.addons.item_id": iid}):
+        await db.addon_items.update_one({"_id": ObjectId(iid)}, {"$set": {"is_active": False, "updated_at": now_iso()}})
+        await audit(admin, "deactivate", "addon_item", iid, request)
+        return {"ok": True, "soft_deleted": True, "message": "This item is used in past orders, so it was deactivated instead of deleted."}
+    await db.addon_items.delete_one({"_id": ObjectId(iid)})
+    await audit(admin, "delete", "addon_item", iid, request)
+    return {"ok": True, "soft_deleted": False}
+
+
+@api.get("/admin/categories/{slug}/addon-groups")
+async def admin_get_category_addons(slug: str, admin: dict = Depends(require_admin)):
+    doc = await db.category_addon_groups.find_one({"category_slug": slug})
+    return {"category_slug": slug, "group_ids": doc.get("group_ids", []) if doc else []}
+
+
+@api.put("/admin/categories/{slug}/addon-groups")
+async def admin_set_category_addons(slug: str, payload: addons.GroupIdsIn, request: Request, admin: dict = Depends(require_admin)):
+    await db.category_addon_groups.update_one({"category_slug": slug}, {"$set": {"group_ids": payload.group_ids}}, upsert=True)
+    await audit(admin, "update", "category_addon_groups", slug, request)
+    return {"category_slug": slug, "group_ids": payload.group_ids}
+
+
+@api.get("/admin/products/{pid}/addon-groups")
+async def admin_get_product_addons(pid: str, admin: dict = Depends(require_admin)):
+    doc = await db.product_addon_groups.find_one({"product_id": pid})
+    return {"product_id": pid, "override": doc is not None, "group_ids": doc.get("group_ids", []) if doc else []}
+
+
+@api.put("/admin/products/{pid}/addon-groups")
+async def admin_set_product_addons(pid: str, payload: addons.GroupIdsIn, request: Request, admin: dict = Depends(require_admin)):
+    await db.product_addon_groups.update_one({"product_id": pid}, {"$set": {"group_ids": payload.group_ids}}, upsert=True)
+    await audit(admin, "update", "product_addon_groups", pid, request)
+    return {"product_id": pid, "override": True, "group_ids": payload.group_ids}
+
+
+@api.delete("/admin/products/{pid}/addon-groups")
+async def admin_clear_product_addons(pid: str, request: Request, admin: dict = Depends(require_admin)):
+    await db.product_addon_groups.delete_one({"product_id": pid})
+    await audit(admin, "delete", "product_addon_groups", pid, request)
+    return {"ok": True}
+
+
 # ============================== Startup ====================================
 
 app.include_router(api)
@@ -1308,6 +1673,16 @@ async def startup():
     await db.orders.create_index("placed_at")
     await db.products_local.create_index("barcode")
     await db.products_local.create_index("category")
+    # Compound, covers the group_id-only lookups too (Mongo compound-index prefix rule),
+    # so a separate single-field group_id index would just be redundant write overhead.
+    await db.addon_items.create_index([("group_id", 1), ("is_active", 1), ("display_order", 1)])
+    await db.addon_groups.create_index([("display_order", 1), ("is_active", 1)])
+    await db.category_addon_groups.create_index("category_slug", unique=True)
+    await db.product_addon_groups.create_index("product_id", unique=True)
+    # Staff notifications indexes
+    await db.staff_notifications.create_index("created_at")
+    await db.staff_notifications.create_index([("order_no", 1), ("type", 1)])
+    await db.staff_notifications.create_index("read")
     await seed_admin()
     await seed_catalog()
     logger.info("Faiha API startup complete. Oracle live=%s", oracle_repo.is_available())

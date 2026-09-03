@@ -82,7 +82,14 @@ export const ProductCard = ({ product, index = 0 }) => {
                 </div>
 
                 <div className="mt-auto pt-3">
-                    {qty === 0 ? (
+                    {product.has_addons ? (
+                        // Customizable products always route to the detail page to pick
+                        // add-ons -- no instant quick-add / qty stepper for these.
+                        <Button asChild disabled={soldOut} data-testid={`customize-${product.id}`}
+                            className="w-full rounded-full bg-forest hover:bg-forest-dark text-white font-semibold active:scale-95 transition-transform">
+                            <Link to={`/product/${product.id}`}>{t("select_options")}</Link>
+                        </Button>
+                    ) : qty === 0 ? (
                         <Button onClick={onAdd} disabled={soldOut} data-testid={`add-to-cart-${product.id}`}
                             className="w-full rounded-full bg-forest hover:bg-forest-dark text-white font-semibold active:scale-95 transition-transform">
                             <Plus className="w-4 h-4 me-1" /> {t("add_to_cart")}

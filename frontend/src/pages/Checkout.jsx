@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Banknote, CreditCard, ShoppingBag, Tag, Loader2 } from "lucide-react";
+import { Banknote, CreditCard, ShoppingBag, Tag, Loader2, MapPin, Car } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
@@ -22,7 +22,10 @@ export default function Checkout() {
     // Only show the coupon box when at least one usable coupon is configured in the admin.
     const { data: couponMeta } = useQuery({ queryKey: ["coupons-active"], queryFn: async () => (await api.get("/coupons/active")).data });
 
-    const [form, setForm] = useState({ name: "", phone: "", email: "" });
+    const [form, setForm] = useState({ name: "", phone: "", email: "", shareholder_number: "" });
+    const [fulfillment, setFulfillment] = useState("PICKUP");
+    const [vehicle, setVehicle] = useState({ number: "", color: "" });
+    const [vehicleErrors, setVehicleErrors] = useState({ number: false, color: false });
     const [payment, setPayment] = useState("Cash");
     const [coupon, setCoupon] = useState("");
     const [appliedCoupon, setAppliedCoupon] = useState(null);
@@ -70,27 +73,46 @@ export default function Checkout() {
             toast.error(t("enter_name_phone"));
             return;
         }
+
+        const errors = { number: false, color: false };
+        if (fulfillment === "CAR_SERVICE") {
+            if (!vehicle.number.trim()) {
+                errors.number = true;
+            }
+            if (!vehicle.color.trim()) {
+                errors.color = true;
+            }
+            if (errors.number || errors.color) {
+                setVehicleErrors(errors);
+                return;
+            }
+        }
+
         if (items.length === 0) return;
         setSubmitting(true);
         try {
             const payload = {
-                items: items.map((i) => ({ product_id: i.product_id, barcode: i.barcode != null ? String(i.barcode) : null, name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source })),
-                customer: { name: form.name, phone: form.phone, email: form.email || null },
+                items: items.map((i) => ({
+                    product_id: i.product_id, barcode: i.barcode != null ? String(i.barcode) : null,
+                    name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source,
+                    addon_item_ids: (i.addons || []).map((a) => a.item_id),
+                })),
+                customer: { name: form.name, phone: form.phone, email: form.email || null, shareholder_number: form.shareholder_number || null },
+                fulfillment_type: fulfillment,
+                vehicle_number: fulfillment === "CAR_SERVICE" ? vehicle.number : null,
+                vehicle_color: fulfillment === "CAR_SERVICE" ? vehicle.color : null,
                 payment_method: payment,
                 coupon_code: appliedCoupon?.code || null,
                 lang,
             };
             const { data } = await api.post("/checkout/place-order", payload);
             clear();
-            if (data.knet_redirect) {
-                navigate(`/payment/knet/${data.order.order_no}`);
-            } else {
-                navigate(`/order/${data.order.order_no}`);
-            }
+            navigate(`/order/${data.order.order_no}`);
         } catch (e) {
             const d = e.response?.data?.detail;
             if (d?.message === "below_min_order") toast.error(`${t("min_order")}: ${formatKD(d.min_order_amount)}`);
             else if (d?.message === "stock_validation_failed") toast.error(t("out_of_stock"));
+            else if (d?.message === "vehicle_details_required") toast.error(t("vehicle_number_required"));
             else toast.error(formatApiError(d));
         } finally {
             setSubmitting(false);
@@ -118,8 +140,38 @@ export default function Checkout() {
                         <div className="grid sm:grid-cols-2 gap-4">
                             <Field label={t("full_name")}><Input data-testid="checkout-name" value={form.name} onChange={set("name")} /></Field>
                             <Field label={t("phone")}><Input data-testid="checkout-phone" value={form.phone} onChange={set("phone")} /></Field>
+                            <div className="sm:col-span-2"><Field label={t("shareholder_number")}><Input data-testid="checkout-shareholder-number" value={form.shareholder_number} onChange={set("shareholder_number")} /></Field></div>
                             <div className="sm:col-span-2"><Field label={t("email")}><Input data-testid="checkout-email" value={form.email} onChange={set("email")} /></Field></div>
                         </div>
+                    </section>
+
+                    {/* fulfillment type */}
+                    <section className="rounded-2xl bg-white border border-border p-6">
+                        <h2 className="font-heading font-semibold text-xl mb-5">{t("fulfillment_type")}</h2>
+                        <div className="grid sm:grid-cols-2 gap-3 mb-6">
+                            <FulfillmentOption active={fulfillment === "PICKUP"} onClick={() => { setFulfillment("PICKUP"); setVehicleErrors({ number: false, color: false }); }} icon={MapPin} title={t("pickup")} desc={t("pickup_desc")} testid="fulfillment-pickup" />
+                            <FulfillmentOption active={fulfillment === "CAR_SERVICE"} onClick={() => setFulfillment("CAR_SERVICE")} icon={Car} title={t("car_service")} desc={t("car_service_desc")} testid="fulfillment-car-service" />
+                        </div>
+
+                        {fulfillment === "CAR_SERVICE" && (
+                            <div className="pt-6 border-t border-border space-y-4">
+                                <h3 className="font-semibold text-lg">{t("vehicle_details")}</h3>
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <Field label={t("vehicle_number")}>
+                                            <Input data-testid="vehicle-number" value={vehicle.number} onChange={(e) => { setVehicle({ ...vehicle, number: e.target.value }); setVehicleErrors({ ...vehicleErrors, number: false }); }} />
+                                        </Field>
+                                        {vehicleErrors.number && <p className="text-xs text-destructive mt-1">{t("vehicle_number_required")}</p>}
+                                    </div>
+                                    <div>
+                                        <Field label={t("vehicle_color")}>
+                                            <Input data-testid="vehicle-color" value={vehicle.color} onChange={(e) => { setVehicle({ ...vehicle, color: e.target.value }); setVehicleErrors({ ...vehicleErrors, color: false }); }} />
+                                        </Field>
+                                        {vehicleErrors.color && <p className="text-xs text-destructive mt-1">{t("vehicle_color_required")}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </section>
 
                     {/* payment */}
@@ -127,7 +179,7 @@ export default function Checkout() {
                         <h2 className="font-heading font-semibold text-xl mb-5">{t("payment_method")}</h2>
                         <div className="grid sm:grid-cols-2 gap-3">
                             <PaymentOption active={payment === "Cash"} onClick={() => setPayment("Cash")} icon={Banknote} title={t("cod")} desc={t("cod_desc")} testid="pay-cod" />
-                            <PaymentOption active={false} disabled note={t("temporarily_unavailable")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />
+                            <PaymentOption active={payment === "KNET"} onClick={() => setPayment("KNET")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />
                         </div>
                     </section>
                 </div>
@@ -137,11 +189,16 @@ export default function Checkout() {
                     <h2 className="font-heading font-semibold text-xl mb-4">{t("order_summary")}</h2>
                     <div className="space-y-3 max-h-52 overflow-y-auto mb-4">
                         {items.map((i) => (
-                            <div key={i.product_id} className="flex items-center gap-3 text-sm">
+                            <div key={i.line_id} className="flex items-center gap-3 text-sm">
                                 <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{i.image && <img src={resolveImageUrl(i.image)} alt="" className="w-full h-full object-cover" />}</div>
                                 <div className="flex-1 min-w-0">
                                     {/* Bold product name; quantity is kept internally but not shown to the customer. */}
                                     <p className="font-bold line-clamp-1">{ln(i)}</p>
+                                    {i.addons?.length > 0 && (
+                                        <p className="text-xs text-muted-foreground line-clamp-1">
+                                            {i.addons.map((a) => ln(a)).join(", ")}
+                                        </p>
+                                    )}
                                     <p className="text-xs text-muted-foreground">{formatKD(i.unit_price)}</p>
                                 </div>
                                 <span className="font-semibold whitespace-nowrap">{formatKD(i.unit_price * i.qty)}</span>
@@ -200,6 +257,18 @@ const Field = ({ label, children }) => (
 );
 const Row = ({ label, value, accent }) => (
     <div className="flex justify-between"><span className="text-muted-foreground">{label}</span><span className={accent ? "text-terracotta font-semibold" : "font-medium"}>{value}</span></div>
+);
+const FulfillmentOption = ({ active, onClick, icon: Icon, title, desc, testid }) => (
+    <button onClick={onClick} data-testid={testid} type="button"
+        className={`relative text-start rounded-xl border-2 p-4 transition-all ${
+            active
+                ? "border-forest bg-forest/5"
+                : "border-border hover:border-forest/40"
+        }`}>
+        <Icon className={`w-6 h-6 mb-2 ${active ? "text-forest" : "text-muted-foreground"}`} />
+        <p className="font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+    </button>
 );
 const PaymentOption = ({ active, onClick, icon: Icon, title, desc, testid, disabled, note }) => (
     <button onClick={disabled ? undefined : onClick} data-testid={testid} type="button" disabled={disabled} aria-disabled={disabled}

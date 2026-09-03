@@ -193,8 +193,66 @@ export default function Products() {
                         <label className="flex items-center gap-2 text-sm"><Switch checked={form.is_promotional} onCheckedChange={(v) => set("is_promotional", v)} /> On Sale</label>
                     </div>
                     <DialogFooter><Button onClick={save} data-testid="save-product" className="bg-forest hover:bg-forest-dark rounded-full">Save</Button></DialogFooter>
+
+                    {editId && <ProductAddonOverride productId={editId} />}
                 </DialogContent>
             </Dialog>
+        </div>
+    );
+}
+
+function ProductAddonOverride({ productId }) {
+    const qc = useQueryClient();
+    const { data: groups = [] } = useQuery({ queryKey: ["admin-addon-groups"], queryFn: async () => (await api.get("/admin/addon-groups")).data });
+    const { data } = useQuery({
+        queryKey: ["product-addon-groups", productId],
+        queryFn: async () => (await api.get(`/admin/products/${productId}/addon-groups`)).data,
+    });
+    const [selectedIds, setSelectedIds] = useState(null);
+    const ids = selectedIds ?? data?.group_ids ?? [];
+
+    const toggle = (gid) => setSelectedIds((prev) => {
+        const base = prev ?? data?.group_ids ?? [];
+        return base.includes(gid) ? base.filter((i) => i !== gid) : [...base, gid];
+    });
+
+    const save = async () => {
+        try {
+            await api.put(`/admin/products/${productId}/addon-groups`, { group_ids: ids });
+            toast.success("Add-on mapping saved");
+            qc.invalidateQueries({ queryKey: ["product-addon-groups", productId] });
+            setSelectedIds(null);
+        } catch { toast.error("Failed to save"); }
+    };
+
+    const clearOverride = async () => {
+        await api.delete(`/admin/products/${productId}/addon-groups`);
+        toast.success("Reverted to category default");
+        qc.invalidateQueries({ queryKey: ["product-addon-groups", productId] });
+        setSelectedIds(null);
+    };
+
+    if (groups.length === 0) return null;
+
+    return (
+        <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-sm">Add-on Groups (override category default)</h3>
+                {data?.override && <button onClick={clearOverride} data-testid="clear-addon-override" className="text-xs text-muted-foreground hover:text-destructive">Clear override</button>}
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">{data?.override ? "This product has its own add-on selection below." : "Currently inheriting its category's add-on groups. Pick groups here to override just this product."}</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+                {groups.map((g) => {
+                    const active = ids.includes(g.id);
+                    return (
+                        <button key={g.id} type="button" onClick={() => toggle(g.id)} data-testid={`product-addon-toggle-${g.id}`}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${active ? "bg-forest text-white border-forest" : "bg-secondary text-muted-foreground border-transparent"}`}>
+                            {g.name_en}
+                        </button>
+                    );
+                })}
+            </div>
+            <Button size="sm" onClick={save} disabled={selectedIds === null} data-testid="save-product-addon-override" className="rounded-full bg-forest hover:bg-forest-dark">Save Add-on Mapping</Button>
         </div>
     );
 }
