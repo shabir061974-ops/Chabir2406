@@ -694,6 +694,10 @@ async def _validate_items(items):
     """Returns (validated, errors). Live Oracle stock check when source=oracle."""
     validated = []
     errors = []
+    # Batch fetch all product overrides (optimization: 1 query instead of N)
+    barcodes = [it.barcode for it in items if it.barcode]
+    overrides_list = await db.product_overrides.find({"barcode": {"$in": barcodes}}).to_list(None) if barcodes else []
+    overrides_by_barcode = {o["barcode"]: o for o in overrides_list}
     for it in items:
         prod = None
         is_oracle = (it.source == "oracle") or str(it.product_id).startswith("ora-")
@@ -708,6 +712,13 @@ async def _validate_items(items):
         if not prod:
             errors.append({"product_id": it.product_id, "reason": "not_found"})
             continue
+        # Apply product overrides (admin-uploaded images, custom names, etc.) from pre-fetched cache
+        if prod.get("barcode") and prod["barcode"] in overrides_by_barcode:
+            override = overrides_by_barcode[prod["barcode"]]
+            for field in oracle_sync.OVERRIDE_FIELDS:
+                v = override.get(field)
+                if v not in (None, "", []):
+                    prod[field] = v
         # live oracle stock when applicable
         available = prod.get("stock", 0)
         if prod.get("source") == "oracle" and prod.get("barcode") and oracle_repo.is_available():
@@ -843,10 +854,12 @@ async def place_order(payload: PlaceOrderInput, request: Request):
     res = await db.orders.insert_one(order_doc)
     if coupon:
         await db.coupons.update_one({"_id": coupon["_id"]}, {"$inc": {"used_count": 1}})
-    # decrement local stock
-    for v in validated:
-        if v["prod"].get("source") == "local":
-            await db.products_local.update_one({"_id": v["prod"]["_id"]}, {"$inc": {"stock": -v["qty"]}})
+    # Batch decrement local stock (optimization: 1 bulk operation instead of N sequential)
+    local_items = [v for v in validated if v["prod"].get("source") == "local"]
+    if local_items:
+        from pymongo import UpdateOne
+        bulk_ops = [UpdateOne({"_id": v["prod"]["_id"]}, {"$inc": {"stock": -v["qty"]}}) for v in local_items]
+        await db.products_local.bulk_write(bulk_ops)
 
     order_doc["id"] = str(res.inserted_id)
     order_doc.pop("_id", None)
