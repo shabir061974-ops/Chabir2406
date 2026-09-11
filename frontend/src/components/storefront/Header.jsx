@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Search, ShoppingCart, Globe, Menu, X, ClipboardList, User } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
@@ -28,6 +28,8 @@ export const Header = ({ categories = [] }) => {
     const navigate = useNavigate();
     const [q, setQ] = useState("");
     const [menuOpen, setMenuOpen] = useState(false);
+    const [safeAreaTop, setSafeAreaTop] = useState(0);
+    const headerRef = useRef(null);
 
     const submitSearch = (e) => {
         e.preventDefault();
@@ -35,9 +37,82 @@ export const Header = ({ categories = [] }) => {
         setMenuOpen(false);
     };
 
+    // Detect safe area inset at runtime for iOS notch/Dynamic Island
+    useEffect(() => {
+        const detectSafeArea = () => {
+            let safeArea = 0;
+            // Try visualViewport offset
+            if (window.visualViewport) {
+                safeArea = Math.max(0, window.visualViewport.offsetTop || 0);
+            }
+            // Fallback to standard iPhone notch height
+            if (safeArea === 0 && window.innerHeight > 800) {
+                safeArea = 44;
+            }
+            setSafeAreaTop(safeArea);
+        };
+
+        detectSafeArea();
+        window.addEventListener('orientationchange', detectSafeArea);
+        return () => window.removeEventListener('orientationchange', detectSafeArea);
+    }, []);
+
+    // iOS fix: Attach direct touch/click handlers to bypass event propagation issues
+    useEffect(() => {
+        const header = headerRef.current;
+        if (!header) return;
+
+        const handleLogoClick = () => navigate("/");
+        const handleAccountClick = () => navigate("/account");
+        const handleCartClick = () => setOpen(true);
+        const handleMenuClick = () => setMenuOpen((v) => !v);
+
+        const logoLink = header.querySelector('[data-testid="logo-link"]');
+        const accountLink = header.querySelector('[data-testid="account-link"]');
+        const cartButton = header.querySelector('[data-testid="cart-button"]');
+        const menuButton = header.querySelector('[data-testid="mobile-menu-toggle"]');
+
+        // Add both click and touchend listeners for redundancy
+        if (logoLink) {
+            logoLink.addEventListener("click", handleLogoClick, true);
+            logoLink.addEventListener("touchend", handleLogoClick, true);
+        }
+        if (accountLink) {
+            accountLink.addEventListener("click", handleAccountClick, true);
+            accountLink.addEventListener("touchend", handleAccountClick, true);
+        }
+        if (cartButton) {
+            cartButton.addEventListener("click", handleCartClick, true);
+            cartButton.addEventListener("touchend", handleCartClick, true);
+        }
+        if (menuButton) {
+            menuButton.addEventListener("click", handleMenuClick, true);
+            menuButton.addEventListener("touchend", handleMenuClick, true);
+        }
+
+        return () => {
+            if (logoLink) {
+                logoLink.removeEventListener("click", handleLogoClick, true);
+                logoLink.removeEventListener("touchend", handleLogoClick, true);
+            }
+            if (accountLink) {
+                accountLink.removeEventListener("click", handleAccountClick, true);
+                accountLink.removeEventListener("touchend", handleAccountClick, true);
+            }
+            if (cartButton) {
+                cartButton.removeEventListener("click", handleCartClick, true);
+                cartButton.removeEventListener("touchend", handleCartClick, true);
+            }
+            if (menuButton) {
+                menuButton.removeEventListener("click", handleMenuClick, true);
+                menuButton.removeEventListener("touchend", handleMenuClick, true);
+            }
+        };
+    }, [navigate, setOpen]);
+
     return (
-        <header className="sticky top-0 z-50 glass border-b border-border" data-testid="site-header">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <header ref={headerRef} className="fixed left-0 right-0 z-50 glass border-b border-border" style={{ top: `${safeAreaTop}px`, pointerEvents: 'auto', touchAction: 'auto' }} data-testid="site-header">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-11">
                 {/* top bar: logo · search · actions */}
                 <div className="flex items-center gap-4 h-16 sm:h-20">
                     <Link to="/" className="flex items-center gap-2 shrink-0" data-testid="logo-link">
@@ -105,7 +180,7 @@ export const Header = ({ categories = [] }) => {
             {/* mobile menu (smooth slide-down) */}
             <div
                 className={`md:hidden overflow-hidden border-t border-border bg-white/95 backdrop-blur transition-all duration-300 ease-in-out ${
-                    menuOpen ? "max-h-[80vh] opacity-100" : "max-h-0 opacity-0"
+                    menuOpen ? "max-h-[80vh] opacity-100 pointer-events-auto" : "max-h-0 opacity-0 pointer-events-none"
                 }`}
                 data-testid="mobile-menu"
             >

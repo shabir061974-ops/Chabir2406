@@ -1,9 +1,10 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Package, Truck, Clock, XCircle, AlertCircle } from "lucide-react";
+import { CheckCircle2, Package, Truck, Clock, XCircle, AlertCircle, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import api from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
+import { useCustomer } from "@/context/CustomerAuthContext";
 import { formatKD } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image";
 import { statusKey } from "@/i18n/translations";
@@ -16,10 +17,14 @@ export default function OrderConfirmation() {
     const { orderNo } = useParams();
     const { t, ln } = useLang();
     const qc = useQueryClient();
+    const { customer } = useCustomer();
     const [arrivedSubmitting, setArrivedSubmitting] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
     const { data: order, isLoading } = useQuery({
         queryKey: ["order", orderNo],
         queryFn: async () => (await api.get(`/orders/${orderNo}`)).data,
+        refetchInterval: autoRefreshEnabled ? 8000 : false,
     });
 
     if (isLoading) return <div className="mx-auto max-w-2xl px-6 py-16"><Skeleton className="h-64 rounded-3xl" /></div>;
@@ -43,6 +48,17 @@ export default function OrderConfirmation() {
         }
     };
 
+    const refreshStatus = async () => {
+        setRefreshing(true);
+        try {
+            await qc.refetchQueries({ queryKey: ["order", orderNo] });
+        } catch (e) {
+            console.error("Failed to refresh status:", e);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     return (
         <div className="mx-auto max-w-3xl px-4 sm:px-6 py-10" data-testid="order-confirmation-page">
             <div className="text-center">
@@ -59,20 +75,34 @@ export default function OrderConfirmation() {
             </div>
 
             {!cancelled && (
-                <div className="mt-10 flex items-center justify-between max-w-xl mx-auto" data-testid="order-tracker">
-                    {STEPS.map((s, i) => {
-                        const Icon = [Clock, CheckCircle2, Package, Truck][i];
-                        const done = i <= currentStep;
-                        return (
-                            <div key={s} className="flex-1 flex flex-col items-center relative">
-                                {i > 0 && <span className={`absolute top-5 -start-1/2 w-full h-0.5 ${i <= currentStep ? "bg-forest" : "bg-border"}`} />}
-                                <span className={`relative z-10 grid place-items-center w-10 h-10 rounded-full ${done ? "bg-forest text-white" : "bg-secondary text-muted-foreground"}`}>
-                                    <Icon className="w-5 h-5" />
-                                </span>
-                                <span className={`mt-2 text-xs font-medium ${done ? "text-forest" : "text-muted-foreground"}`}>{t(statusKey(s))}</span>
-                            </div>
-                        );
-                    })}
+                <div className="mt-10 space-y-6">
+                    <div className="flex items-center justify-between max-w-xl mx-auto w-full" data-testid="order-tracker">
+                        {STEPS.map((s, i) => {
+                            const Icon = [Clock, CheckCircle2, Package, Truck][i];
+                            const done = i <= currentStep;
+                            return (
+                                <div key={s} className="flex-1 flex flex-col items-center relative">
+                                    {i > 0 && <span className={`absolute top-5 -start-1/2 w-full h-0.5 ${i <= currentStep ? "bg-forest" : "bg-border"}`} />}
+                                    <span className={`relative z-10 grid place-items-center w-10 h-10 rounded-full ${done ? "bg-forest text-white" : "bg-secondary text-muted-foreground"}`}>
+                                        <Icon className="w-5 h-5" />
+                                    </span>
+                                    <span className={`mt-2 text-xs font-medium ${done ? "text-forest" : "text-muted-foreground"}`}>{t(statusKey(s))}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="flex justify-center">
+                        <Button
+                            onClick={refreshStatus}
+                            disabled={refreshing}
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+                            {t("refresh_status") || "Refresh Status"}
+                        </Button>
+                    </div>
                 </div>
             )}
 
@@ -170,8 +200,9 @@ export default function OrderConfirmation() {
                 )}
             </div>
 
-            <div className="text-center mt-8">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8">
                 <Link to="/products"><Button className="rounded-full bg-forest hover:bg-forest-dark px-8">{t("continue_shopping")}</Button></Link>
+                {customer && <Link to="/account"><Button variant="outline" className="rounded-full">{t("order_history")}</Button></Link>}
             </div>
         </div>
     );

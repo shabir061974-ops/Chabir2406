@@ -4,7 +4,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { formatKD } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetCloseContext } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
 export const CartDrawer = () => {
@@ -15,8 +15,9 @@ export const CartDrawer = () => {
     const goCheckout = () => { setOpen(false); navigate("/checkout"); };
 
     return (
-        <Sheet open={open} onOpenChange={setOpen}>
-            <SheetContent side={isRtl ? "left" : "right"} className="w-full sm:max-w-md flex flex-col p-0" data-testid="cart-drawer">
+        <SheetCloseContext.Provider value={setOpen}>
+            <Sheet open={open} onOpenChange={setOpen}>
+                <SheetContent side={isRtl ? "left" : "right"} className="w-full sm:max-w-md flex flex-col p-0" data-testid="cart-drawer">
                 <SheetHeader className="px-5 py-4 border-b border-border">
                     <SheetTitle className="font-heading text-xl flex items-center gap-2">
                         <ShoppingBag className="w-5 h-5 text-forest" /> {t("your_cart")} ({count})
@@ -78,6 +79,7 @@ export const CartDrawer = () => {
                     </>
                 )}
             </SheetContent>
-        </Sheet>
+            </Sheet>
+        </SheetCloseContext.Provider>
     );
 };

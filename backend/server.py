@@ -120,8 +120,126 @@ def clean(doc):
     return doc
 
 
+def clean_guest_order(doc):
+    """Clean order data for guest view - remove sensitive customer information."""
+    if not doc:
+        return doc
+    doc = clean(doc)
+    # Remove sensitive customer fields guest doesn't need
+    if "customer" in doc:
+        doc["customer"] = {
+            "name": doc["customer"].get("name", "")
+        }
+    return doc
+
+
 def gen_order_no():
     return f"FAIHA-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+
+async def send_otp_sms(phone: str, otp: str) -> bool:
+    """Send OTP via SMS. Returns True if sent successfully, False otherwise.
+
+    Requires SMS provider credentials in environment:
+    - Option 1 (Twilio): TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+    - Option 2 (Vonage): VONAGE_API_KEY, VONAGE_API_SECRET, VONAGE_PHONE_NUMBER
+    - Option 3 (AWS SNS): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+
+    TODO: Set SMS_PROVIDER environment variable to enable delivery.
+    """
+    sms_provider = os.environ.get("SMS_PROVIDER", "").lower()
+
+    if not sms_provider:
+        # SMS provider not configured - log for debugging only, don't expose OTP
+        logger.warning(f"SMS provider not configured. OTP delivery disabled. Configure SMS_PROVIDER env var.")
+        return False
+
+    try:
+        if sms_provider == "twilio":
+            return await _send_otp_twilio(phone, otp)
+        elif sms_provider == "vonage":
+            return await _send_otp_vonage(phone, otp)
+        elif sms_provider == "aws":
+            return await _send_otp_aws(phone, otp)
+        else:
+            logger.error(f"Unknown SMS_PROVIDER: {sms_provider}")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to send OTP: {str(e)}")
+        return False
+
+
+async def _send_otp_twilio(phone: str, otp: str) -> bool:
+    """Send OTP via Twilio SMS."""
+    try:
+        from twilio.rest import Client
+        account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+        auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+        from_phone = os.environ.get("TWILIO_PHONE_NUMBER")
+
+        if not all([account_sid, auth_token, from_phone]):
+            logger.error("Twilio credentials not configured")
+            return False
+
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            body=f"Your Faiha Store verification code is: {otp}\n\nValid for 10 minutes.",
+            from_=from_phone,
+            to=phone
+        )
+        logger.info(f"OTP sent via Twilio (SID: {message.sid}, phone: ...{phone[-4:]})")
+        return True
+    except ImportError:
+        logger.error("Twilio SDK not installed. Install with: pip install twilio")
+        return False
+
+
+async def _send_otp_vonage(phone: str, otp: str) -> bool:
+    """Send OTP via Vonage SMS."""
+    try:
+        from vonage import Client
+        api_key = os.environ.get("VONAGE_API_KEY")
+        api_secret = os.environ.get("VONAGE_API_SECRET")
+        from_phone = os.environ.get("VONAGE_PHONE_NUMBER")
+
+        if not all([api_key, api_secret, from_phone]):
+            logger.error("Vonage credentials not configured")
+            return False
+
+        client = Client(key=api_key, secret=api_secret)
+        response = client.sms.send_message({
+            "to": phone,
+            "from": from_phone,
+            "text": f"Your Faiha Store verification code is: {otp}\n\nValid for 10 minutes."
+        })
+
+        if response["messages"][0]["status"] == "0":
+            logger.info(f"OTP sent via Vonage (phone: ...{phone[-4:]})")
+            return True
+        else:
+            logger.error(f"Vonage SMS failed: {response['messages'][0]['error-text']}")
+            return False
+    except ImportError:
+        logger.error("Vonage SDK not installed. Install with: pip install vonage")
+        return False
+
+
+async def _send_otp_aws(phone: str, otp: str) -> bool:
+    """Send OTP via AWS SNS SMS."""
+    try:
+        import boto3
+        aws_region = os.environ.get("AWS_REGION", "us-east-1")
+
+        sns_client = boto3.client("sns", region_name=aws_region)
+        response = sns_client.publish(
+            PhoneNumber=phone,
+            Message=f"Your Faiha Store verification code is: {otp}\n\nValid for 10 minutes."
+        )
+        logger.info(f"OTP sent via AWS SNS (MessageId: {response['MessageId']}, phone: ...{phone[-4:]})")
+        return True
+    except ImportError:
+        logger.error("AWS SDK (boto3) not installed. Install with: pip install boto3")
+        return False
 
 
 async def create_staff_notification(notification_type: str, order_no: str, order_id, customer_name: str,
@@ -297,6 +415,15 @@ class PlaceOrderInput(BaseModel):
 class KnetCallbackInput(BaseModel):
     order_no: str
     result: str  # CAPTURED | CANCELLED
+
+
+class GuestOtpRequestInput(BaseModel):
+    phone: str
+
+
+class GuestOtpVerifyInput(BaseModel):
+    phone: str
+    otp: str
 
 
 class ProductIn(BaseModel):
@@ -724,11 +851,8 @@ async def place_order(payload: PlaceOrderInput, request: Request):
     order_doc["id"] = str(res.inserted_id)
     order_doc.pop("_id", None)
 
-    # Payment will be collected physically by Faiha staff (CASH or KNET)
-    # No online payment gateway is triggered
-
-    # Create staff notification for new order
-    await create_staff_notification(
+    # Fire-and-forget: create staff notification asynchronously without blocking response
+    asyncio.create_task(create_staff_notification(
         notification_type="new_order",
         order_no=order_no,
         order_id=res.inserted_id,
@@ -737,7 +861,7 @@ async def place_order(payload: PlaceOrderInput, request: Request):
         vehicle_number=(payload.vehicle_number.strip() if payload.vehicle_number else None) if fulfillment_type == "CAR_SERVICE" else None,
         vehicle_color=(payload.vehicle_color.strip() if payload.vehicle_color else None) if fulfillment_type == "CAR_SERVICE" else None,
         payment_method=pm
-    )
+    ))
 
     return {"order": order_doc}
 
@@ -773,6 +897,145 @@ async def track_order(order_no: str, phone: Optional[str] = None):
     if phone and order["customer"].get("phone") != phone:
         raise HTTPException(status_code=403, detail="Phone does not match order")
     return clean(order)
+
+
+# DISABLED: Guest OTP feature - not production-ready without SMS provider configuration
+# @api.post("/guest/request-otp")
+# @limiter.limit("5/minute")
+async def _disabled_request_guest_otp(request: Request, payload: GuestOtpRequestInput):
+    """Request OTP for guest order history access. Rate-limited strictly."""
+    phone = payload.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number required")
+
+    target = _normalize_phone(phone)
+    if not target or len(target) < 8:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+
+    orders = await db.orders.find({"customer.phone": phone}).to_list(1)
+    if not orders:
+        # Don't reveal if phone has no orders (security: don't leak customer existence)
+        return {"message": "If you have orders, you will receive an OTP via SMS"}
+
+    otp = secrets.randbelow(1000000)
+    otp_str = f"{otp:06d}"
+    otp_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+
+    await db.guest_otp_sessions.update_one(
+        {"phone": target},
+        {"$set": {
+            "phone": target,
+            "otp": otp_str,
+            "created_at": now_iso(),
+            "expires_at": otp_expires_at,
+            "attempts": 0,
+            "verified": False,
+        }},
+        upsert=True
+    )
+
+    # Attempt to send OTP via SMS
+    sms_sent = await send_otp_sms(phone, otp_str)
+
+    if not sms_sent:
+        # SMS delivery failed - for production, this should trigger an alert
+        logger.error(f"Failed to send OTP for phone ...{target[-4:]}. SMS provider may not be configured.")
+        raise HTTPException(status_code=503, detail="SMS delivery temporarily unavailable. Please try again later.")
+
+    return {
+        "message": "OTP sent to your phone",
+        "phone_masked": f"***-{target[-4:]}",
+        "expires_in_minutes": 10
+    }
+
+
+# DISABLED: Guest OTP feature - not production-ready without SMS provider configuration
+# @api.post("/guest/verify-otp")
+# @limiter.limit("10/minute")
+async def _disabled_verify_guest_otp(request: Request, payload: GuestOtpVerifyInput):
+    """Verify OTP and return temporary access token for order history."""
+    phone = payload.phone.strip()
+    otp = payload.otp.strip()
+
+    if not phone or not otp:
+        raise HTTPException(status_code=400, detail="Phone and OTP required")
+
+    target = _normalize_phone(phone)
+    if not target or len(target) < 8:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+
+    session = await db.guest_otp_sessions.find_one({"phone": target})
+    if not session:
+        raise HTTPException(status_code=404, detail="No OTP request found. Request a new OTP.")
+
+    if session.get("verified"):
+        raise HTTPException(status_code=400, detail="OTP already verified. Use your access token.")
+
+    if session.get("attempts", 0) >= 3:
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Request a new OTP.")
+
+    if session.get("expires_at") < now_iso():
+        raise HTTPException(status_code=400, detail="OTP expired. Request a new OTP.")
+
+    # Check if OTP is None (was already used or invalidated)
+    if not session.get("otp"):
+        raise HTTPException(status_code=400, detail="OTP already used or invalid. Request a new OTP.")
+
+    if session.get("otp") != otp:
+        await db.guest_otp_sessions.update_one(
+            {"phone": target},
+            {"$inc": {"attempts": 1}}
+        )
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    access_token = secrets.token_urlsafe(32)
+    token_expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+    await db.guest_otp_sessions.update_one(
+        {"phone": target},
+        {"$set": {
+            "verified": True,
+            "access_token": access_token,
+            "access_token_expires_at": token_expires_at,
+            "verified_at": now_iso(),
+            "otp": None,  # Invalidate OTP after successful verification (one-time-use)
+        }}
+    )
+
+    logger.info(f"OTP verified successfully for phone ending in ...{target[-4:]}")
+
+    return {
+        "access_token": access_token,
+        "expires_in_hours": 1,
+        "message": "Verified. Use this token to access order history."
+    }
+
+
+# DISABLED: Guest OTP feature - not production-ready without SMS provider configuration
+# @api.get("/guest/orders")
+# @limiter.limit("30/minute")
+async def _disabled_guest_order_history(token: str, request: Request):
+    """Retrieve order history for verified guest using OTP-based token."""
+    if not token or not token.strip():
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    session = await db.guest_otp_sessions.find_one({"access_token": token})
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    if not session.get("verified"):
+        raise HTTPException(status_code=401, detail="Token not verified")
+
+    if session.get("access_token_expires_at", "") < now_iso():
+        raise HTTPException(status_code=401, detail="Token expired")
+
+    target_phone = session.get("phone")
+    docs = await db.orders.find({}).sort("placed_at", -1).to_list(200)
+    docs = [d for d in docs if _normalize_phone((d.get("customer") or {}).get("phone", "")) == target_phone]
+
+    logger.info(f"Guest accessed order history with token (phone ending in ...{target_phone[-4:]})")
+
+    return [clean_guest_order(d) for d in docs]
 
 
 @api.post("/orders/{order_no}/car-service-arrival")

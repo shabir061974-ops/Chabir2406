@@ -12,7 +12,6 @@ export const Footer = () => {
                         <img src="/faiha-logo.png" alt={t("brand")} className="w-10 h-10 rounded-full object-cover bg-white" />
                         <span className="font-heading font-extrabold text-lg">{t("brand")}</span>
                     </div>
-                    <p className="text-sm text-white/70 leading-relaxed">{t("tagline")}</p>
                     <p className="text-xs text-white/60 leading-relaxed">Official Online Store of<br />AL-FAIHA CO-OPERATIVE SOCIETY</p>
                 </div>
                 <div>

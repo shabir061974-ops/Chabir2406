@@ -5,6 +5,8 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+const SheetCloseContext = React.createContext(null)
+
 const Sheet = SheetPrimitive.Root
 
 const SheetTrigger = SheetPrimitive.Trigger
@@ -43,19 +45,49 @@ const sheetVariants = cva(
   }
 )
 
-const SheetContent = React.forwardRef(({ side = "right", className, children, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
-      <SheetPrimitive.Close
-        className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
-      {children}
-    </SheetPrimitive.Content>
-  </SheetPortal>
-))
+const SheetContent = React.forwardRef(({ side = "right", className, children, ...props }, ref) => {
+  const closeButtonRef = React.useRef(null)
+  const onOpenChange = React.useContext(SheetCloseContext)
+  const closeHandledRef = React.useRef(false)
+
+  React.useEffect(() => {
+    const closeButton = closeButtonRef.current
+    if (!closeButton || !onOpenChange) return
+
+    closeHandledRef.current = false
+
+    const handleClose = (event) => {
+      event.stopPropagation()
+      if (closeHandledRef.current) return
+      closeHandledRef.current = true
+      onOpenChange(false)
+    }
+
+    closeButton.addEventListener("click", handleClose, true)
+    closeButton.addEventListener("touchend", handleClose, true)
+
+    return () => {
+      closeButton.removeEventListener("click", handleClose, true)
+      closeButton.removeEventListener("touchend", handleClose, true)
+    }
+  }, [onOpenChange])
+
+  return (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
+        <SheetPrimitive.Close
+          ref={closeButtonRef}
+          className="absolute right-4 w-11 h-11 flex items-center justify-center z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
+          style={{ top: 'max(1rem, env(safe-area-inset-top))' }}>
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+        {children}
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  )
+})
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({
@@ -105,4 +137,5 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
+  SheetCloseContext,
 }

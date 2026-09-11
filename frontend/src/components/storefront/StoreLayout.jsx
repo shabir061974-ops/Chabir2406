@@ -15,7 +15,7 @@ export default function StoreLayout() {
     return (
         <div className="min-h-screen flex flex-col bg-cream">
             <Header categories={categories} />
-            <main className="flex-1">
+            <main className="flex-1" style={{ paddingTop: 'calc(5rem + 44px)' }}>
                 <Outlet context={{ categories }} />
             </main>
             <Footer />

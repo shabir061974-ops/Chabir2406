@@ -3,7 +3,6 @@
   "appName": "Faiha Store",
   "webDir": "build",
   "server": {
-    "url": "https://www.faihacoopkw.com",
     "androidScheme": "https"
   },
   "android": {

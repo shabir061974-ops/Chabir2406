@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Banknote, CreditCard, ShoppingBag, Tag, Loader2, MapPin, Car } from "lucide-react";
@@ -21,6 +21,17 @@ export default function Checkout() {
     const delivery = settings?.delivery || {};
     // Only show the coupon box when at least one usable coupon is configured in the admin.
     const { data: couponMeta } = useQuery({ queryKey: ["coupons-active"], queryFn: async () => (await api.get("/coupons/active")).data });
+
+    const productIds = useMemo(() => [...new Set(items.map(i => i.product_id))], [items]);
+    const { data: products = {} } = useQuery({
+        queryKey: ["checkout-products", productIds],
+        queryFn: async () => {
+            if (!productIds.length) return {};
+            const data = await Promise.all(productIds.map(id => api.get(`/products/${id}`).then(r => r.data)));
+            return Object.fromEntries(data.map(p => [p.id, p]));
+        },
+        enabled: productIds.length > 0,
+    });
 
     const [form, setForm] = useState({ name: "", phone: "", email: "", shareholder_number: "" });
     const [fulfillment, setFulfillment] = useState("PICKUP");
@@ -90,32 +101,31 @@ export default function Checkout() {
 
         if (items.length === 0) return;
         setSubmitting(true);
+        const payload = {
+            items: items.map((i) => ({
+                product_id: i.product_id, barcode: i.barcode != null ? String(i.barcode) : null,
+                name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source,
+                addon_item_ids: (i.addons || []).map((a) => a.item_id),
+            })),
+            customer: { name: form.name, phone: form.phone, email: form.email || null, shareholder_number: form.shareholder_number || null },
+            fulfillment_type: fulfillment,
+            vehicle_number: fulfillment === "CAR_SERVICE" ? vehicle.number : null,
+            vehicle_color: fulfillment === "CAR_SERVICE" ? vehicle.color : null,
+            payment_method: payment,
+            coupon_code: appliedCoupon?.code || null,
+            lang,
+        };
         try {
-            const payload = {
-                items: items.map((i) => ({
-                    product_id: i.product_id, barcode: i.barcode != null ? String(i.barcode) : null,
-                    name: i.name_en, qty: i.qty, unit_price: i.unit_price, source: i.source,
-                    addon_item_ids: (i.addons || []).map((a) => a.item_id),
-                })),
-                customer: { name: form.name, phone: form.phone, email: form.email || null, shareholder_number: form.shareholder_number || null },
-                fulfillment_type: fulfillment,
-                vehicle_number: fulfillment === "CAR_SERVICE" ? vehicle.number : null,
-                vehicle_color: fulfillment === "CAR_SERVICE" ? vehicle.color : null,
-                payment_method: payment,
-                coupon_code: appliedCoupon?.code || null,
-                lang,
-            };
             const { data } = await api.post("/checkout/place-order", payload);
             clear();
             navigate(`/order/${data.order.order_no}`);
         } catch (e) {
+            setSubmitting(false);
             const d = e.response?.data?.detail;
             if (d?.message === "below_min_order") toast.error(`${t("min_order")}: ${formatKD(d.min_order_amount)}`);
             else if (d?.message === "stock_validation_failed") toast.error(t("out_of_stock"));
             else if (d?.message === "vehicle_details_required") toast.error(t("vehicle_number_required"));
             else toast.error(formatApiError(d));
-        } finally {
-            setSubmitting(false);
         }
     };
 
@@ -188,22 +198,25 @@ export default function Checkout() {
                 <aside className="rounded-2xl bg-white border border-border p-6 h-fit lg:sticky lg:top-28" data-testid="order-summary">
                     <h2 className="font-heading font-semibold text-xl mb-4">{t("order_summary")}</h2>
                     <div className="space-y-3 max-h-52 overflow-y-auto mb-4">
-                        {items.map((i) => (
-                            <div key={i.line_id} className="flex items-center gap-3 text-sm">
-                                <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{i.image && <img src={resolveImageUrl(i.image)} alt="" className="w-full h-full object-cover" />}</div>
-                                <div className="flex-1 min-w-0">
-                                    {/* Bold product name; quantity is kept internally but not shown to the customer. */}
-                                    <p className="font-bold line-clamp-1">{ln(i)}</p>
-                                    {i.addons?.length > 0 && (
-                                        <p className="text-xs text-muted-foreground line-clamp-1">
-                                            {i.addons.map((a) => ln(a)).join(", ")}
-                                        </p>
-                                    )}
-                                    <p className="text-xs text-muted-foreground">{formatKD(i.unit_price)}</p>
+                        {items.map((i) => {
+                            const currentProduct = products[i.product_id];
+                            const currentImage = currentProduct?.images?.[0] || i.image;
+                            return (
+                                <div key={i.line_id} className="flex items-center gap-3 text-sm">
+                                    <div className="w-10 h-10 rounded-lg overflow-hidden bg-secondary shrink-0">{currentImage && <img src={resolveImageUrl(currentImage)} alt="" className="w-full h-full object-cover" />}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold line-clamp-1">{ln(i)}</p>
+                                        {i.addons?.length > 0 && (
+                                            <p className="text-xs text-muted-foreground line-clamp-1">
+                                                {i.addons.map((a) => ln(a)).join(", ")}
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">{formatKD(i.unit_price)}</p>
+                                    </div>
+                                    <span className="font-semibold whitespace-nowrap">{formatKD(i.unit_price * i.qty)}</span>
                                 </div>
-                                <span className="font-semibold whitespace-nowrap">{formatKD(i.unit_price * i.qty)}</span>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* Coupon box appears only when the admin has at least one usable coupon configured. */}

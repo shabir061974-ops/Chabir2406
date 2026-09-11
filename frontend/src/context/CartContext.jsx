@@ -18,6 +18,7 @@ export function CartProvider({ children }) {
     });
     const [open, setOpen] = useState(false);
 
+
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     }, [items]);
