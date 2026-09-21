@@ -84,6 +84,49 @@ class TestPublic:
         assert r.status_code == 404
 
 
+# ---------------- Sitemap ----------------
+class TestSitemap:
+    def test_sitemap_api_is_valid_xml(self, session):
+        r = session.get(f"{API}/sitemap.xml")
+        assert r.status_code == 200
+        assert "xml" in r.headers.get("content-type", "")
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(r.text)  # raises ParseError if malformed/unescaped
+        ns = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+        locs = [el.text for el in root.iter(f"{ns}loc")]
+        assert f"{BASE_URL}/" in locs
+
+    def test_sitemap_public_path_matches_api(self, session):
+        # frontend/nginx.conf proxies the public /sitemap.xml to /api/sitemap.xml --
+        # both must serve the same generated document.
+        r_public = session.get(f"{BASE_URL}/sitemap.xml")
+        r_api = session.get(f"{API}/sitemap.xml")
+        assert r_public.status_code == 200
+        assert r_public.text == r_api.text
+
+    def test_sitemap_excludes_forbidden_and_low_value_paths(self, session):
+        r = session.get(f"{API}/sitemap.xml")
+        for bad in ("/admin", "/checkout", "/account", "/order/", "/payment/", "/api/", "/track"):
+            assert bad not in r.text
+
+    def test_sitemap_only_lists_active_categories(self, session):
+        cats = session.get(f"{API}/categories").json()
+        active_slugs = {c["slug"] for c in cats if c.get("is_active", True)}
+        r = session.get(f"{API}/sitemap.xml")
+        for slug in active_slugs:
+            assert f"/category/{slug}" in r.text
+        # the sitemap must never invent a category URL that isn't in this active set
+        import re
+        found_slugs = set(re.findall(r"/category/([a-z0-9-]+)", r.text))
+        assert found_slugs.issubset(active_slugs)
+
+    def test_sitemap_includes_a_known_active_product(self, session):
+        products = session.get(f"{API}/products?page_size=1").json()["items"]
+        pid = products[0]["id"]
+        r = session.get(f"{API}/sitemap.xml")
+        assert f"/product/{pid}" in r.text
+
+
 # ---------------- Auth ----------------
 class TestAuth:
     def test_login_invalid(self, session):

@@ -32,6 +32,7 @@ import oracle_sync
 import google_sheets_repo
 import seed_data
 import addons
+import sitemap
 
 # ----------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -686,6 +687,15 @@ async def get_product(id_or_barcode: str):
     item["effective_price"] = _eff_price(item)
     item["has_addons"] = bool(await addons.get_product_addons(db, item))
     return item
+
+
+@api.get("/sitemap.xml")
+async def get_sitemap():
+    """Public sitemap, proxied at https://www.faihacoopkw.com/sitemap.xml by nginx
+    (see frontend/nginx.conf). See sitemap.py for the active-only filtering,
+    caching, and failure-fallback logic."""
+    xml = await sitemap.get_sitemap_xml(db)
+    return Response(content=xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=1800"})
 
 
 # ============================== Checkout ===================================
