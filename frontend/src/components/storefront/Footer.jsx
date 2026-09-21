@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MapPin, Phone, Mail, Clock } from "lucide-react";
+import { MapPin, Phone, Mail } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 
 export const Footer = () => {
@@ -28,7 +28,6 @@ export const Footer = () => {
                         <li className="flex items-center gap-2"><MapPin className="w-4 h-4 shrink-0" /> Faiha, Kuwait</li>
                         <li className="flex items-center gap-2"><Phone className="w-4 h-4 shrink-0" /> +965 1861000</li>
                         <li className="flex items-center gap-2"><Mail className="w-4 h-4 shrink-0" /> <a href="mailto:info@faihacoopkw.com" className="hover:text-white break-all">info@faihacoopkw.com</a></li>
-                        <li className="flex items-center gap-2"><Clock className="w-4 h-4 shrink-0" /> {t("hours_24")}</li>
                     </ul>
                 </div>
             </div>

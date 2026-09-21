@@ -1,4 +1,4 @@
-import { Link, useOutletContext } from "react-router-dom";
+import { Link, useOutletContext, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import api from "@/lib/api";
@@ -17,17 +17,18 @@ const HERO_BY_LANG = {
     en: {
         src: "/hero-cafe-bakery-1024.webp",
         srcSet: "/hero-cafe-bakery-640.webp 640w, /hero-cafe-bakery-1024.webp 1024w, /hero-cafe-bakery-1536.webp 1536w",
-        alt: "Faiha Cafe and Bakery — Freshly Brewed Coffee, Freshly Baked Happiness",
+        alt: "Your Coffee. Your Moment — Faiha Cafe with Freshly Brewed Coffee and Croissants",
     },
     ar: {
         src: "/hero-cafe-bakery-ar-1024.webp",
         srcSet: "/hero-cafe-bakery-ar-640.webp 640w, /hero-cafe-bakery-ar-1024.webp 1024w, /hero-cafe-bakery-ar-1536.webp 1536w",
-        alt: "مقهى ومخبز الفيحاء — قهوة محضرة طازجة، مخبوزات طازجة، سعادة كل يوم",
+        alt: "قهوتك. لحظتك — مقهى الفيحاء مع القهوة المحضرة الطازجة والكرواسان",
     },
 };
 
 export default function Home() {
     const { t, ln, lang } = useLang();
+    const navigate = useNavigate();
     const { categories = [] } = useOutletContext();
     const hero = HERO_BY_LANG[lang] || HERO_BY_LANG.en;
 
@@ -52,7 +53,7 @@ export default function Home() {
         <div data-testid="home-page">
             {/* Hero */}
             <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
-                <div className="overflow-hidden rounded-3xl">
+                <div className="relative overflow-hidden rounded-3xl group cursor-pointer" onClick={() => navigate("/products")}>
                     <img
                         key={lang}
                         src={hero.src}
@@ -61,12 +62,20 @@ export default function Home() {
                         width={HERO_W}
                         height={HERO_H}
                         alt={hero.alt}
-                        className="w-full h-auto block"
+                        className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
                         loading="eager"
                         fetchPriority="high"
                         decoding="async"
                         data-testid="hero-banner"
                     />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
+                    <button
+                        onClick={(e) => { e.stopPropagation(); navigate("/products"); }}
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 px-8 py-3 bg-forest hover:bg-forest-dark text-white font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+                        data-testid="hero-shop-button"
+                    >
+                        {t("shop_now") || "Shop Now"}
+                    </button>
                 </div>
             </section>
 
