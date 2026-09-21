@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Minus, ShoppingCart, ChevronLeft } from "lucide-react";
@@ -33,11 +33,60 @@ export default function ProductDetail() {
         enabled: !!p?.has_addons,
     });
 
+    const productImageUrl = p?.images?.[0] ? resolveImageUrl(p.images[0]) : undefined;
+    const productUrl = `https://www.faihacoopkw.com/product/${id}`;
+
     useSeo({
         title: p ? `${ln(p)} | Faiha Store` : undefined,
         description: p ? `Buy ${ln(p)} online at Faiha Store — ${p.category}, ${formatKD(p.effective_price ?? p.price)}. Fast delivery across Kuwait from AL-FAIHA CO-OPERATIVE SOCIETY.` : undefined,
         path: `/product/${id}`,
+        image: productImageUrl,
+        type: "product",
     });
+
+    // Inject Product schema.org structured data for this product
+    useEffect(() => {
+        if (!p) return;
+
+        const productSchema = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "name": ln(p),
+            "description": `${ln(p)} - ${p.category}`,
+            "image": productImageUrl || "https://www.faihacoopkw.com/faiha-logo.png",
+            "brand": {
+                "@type": "Brand",
+                "name": "Faiha Store"
+            },
+            "offers": {
+                "@type": "Offer",
+                "url": productUrl,
+                "priceCurrency": "KWD",
+                "price": (p.effective_price ?? p.price).toString(),
+                "availability": p.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+                "seller": {
+                    "@type": "Organization",
+                    "name": "AL-FAIHA CO-OPERATIVE SOCIETY"
+                }
+            }
+        };
+
+        let script = document.querySelector('script[data-product-schema]');
+        if (!script) {
+            script = document.createElement('script');
+            script.type = 'application/ld+json';
+            script.setAttribute('data-product-schema', 'true');
+            document.head.appendChild(script);
+        }
+        script.textContent = JSON.stringify(productSchema);
+
+        return () => {
+            // Cleanup: remove the schema when unmounting
+            if (script && script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+        };
+    }, [p, id, productImageUrl, ln, productUrl]);
 
     if (isLoading) {
         return <div className="mx-auto max-w-5xl px-6 py-10 grid md:grid-cols-2 gap-10">
