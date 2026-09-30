@@ -537,6 +537,15 @@ async def health():
     return {"status": "ok" if db_ok else "degraded", "db": db_ok, "time": now_iso()}
 
 
+def get_features() -> dict:
+    """Single source of truth for runtime feature flags. Served by /app/config and enforced server-side."""
+    return {"knet": False, "customer_accounts": True}
+
+
+def knet_enabled() -> bool:
+    return get_features().get("knet") is True
+
+
 @api.get("/app/config")
 async def app_config():
     """Runtime config the mobile apps read on launch — lets you gate versions / pause without a store update."""
@@ -545,7 +554,7 @@ async def app_config():
         "maintenance": False,
         "currency": CURRENCY,
         "contact": {"whatsapp": "96590986000"},
-        "features": {"knet": False, "customer_accounts": True},
+        "features": get_features(),
     }
 
 
@@ -829,6 +838,8 @@ async def place_order(payload: PlaceOrderInput, request: Request):
     if pm_raw in ("COD", "CASH"):
         pm = "Cash"
     elif pm_raw == "KNET":
+        if not knet_enabled():
+            raise HTTPException(status_code=400, detail={"message": "knet_disabled"})
         pm = "KNET"
     else:
         raise HTTPException(status_code=400, detail={"message": "invalid_payment_method"})
@@ -892,6 +903,8 @@ async def place_order(payload: PlaceOrderInput, request: Request):
 @api.post("/payments/knet/callback")
 async def knet_callback(payload: KnetCallbackInput):
     """Simulated KNET hosted-payment-page return handler."""
+    if not knet_enabled():
+        raise HTTPException(status_code=403, detail={"message": "knet_disabled"})
     order = await db.orders.find_one({"order_no": payload.order_no})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")

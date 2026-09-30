@@ -5,6 +5,7 @@ import { Banknote, CreditCard, ShoppingBag, Tag, Loader2, MapPin, Car } from "lu
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
+import { useFeatureFlags } from "@/hooks/use-app-config";
 import { formatKD } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ export default function Checkout() {
     const { t, lang, ln } = useLang();
     const { items, subtotal, clear } = useCart();
     const navigate = useNavigate();
+    const { knetEnabled } = useFeatureFlags();
 
     const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: async () => (await api.get("/settings")).data });
     const delivery = settings?.delivery || {};
@@ -189,7 +191,7 @@ export default function Checkout() {
                         <h2 className="font-heading font-semibold text-xl mb-5">{t("payment_method")}</h2>
                         <div className="grid sm:grid-cols-2 gap-3">
                             <PaymentOption active={payment === "Cash"} onClick={() => setPayment("Cash")} icon={Banknote} title={t("cod")} desc={t("cod_desc")} testid="pay-cod" />
-                            <PaymentOption active={payment === "KNET"} onClick={() => setPayment("KNET")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />
+                            {knetEnabled && <PaymentOption active={payment === "KNET"} onClick={() => setPayment("KNET")} icon={CreditCard} title={t("knet")} desc={t("knet_desc")} testid="pay-knet" />}
                         </div>
                     </section>
                 </div>

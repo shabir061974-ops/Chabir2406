@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useLang } from "@/context/LanguageContext";
+import { useFeatureFlags } from "@/hooks/use-app-config";
 import { formatKD } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ export default function KnetPayment() {
     const { t } = useLang();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { knetEnabled, isLoading: flagsLoading } = useFeatureFlags();
     const [processing, setProcessing] = useState(false);
 
     const { data: order } = useQuery({
@@ -34,6 +36,10 @@ export default function KnetPayment() {
             setProcessing(false);
         }
     };
+
+    // The KNET page is a simulation until a real gateway is integrated; keep it unreachable while the feature is off.
+    if (flagsLoading) return null;
+    if (!knetEnabled) return <Navigate to="/" replace />;
 
     return (
         <div className="min-h-[70vh] grid place-items-center px-4 py-12" data-testid="knet-payment-page">
