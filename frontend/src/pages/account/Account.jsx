@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { User, LogOut, Package, Loader2, Plus, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { User, LogOut, Package, Loader2, Plus, X, Trash2 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
 import { useCustomer } from "@/context/CustomerAuthContext";
 import { useLang } from "@/context/LanguageContext";
@@ -9,6 +9,10 @@ import { formatKD } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+    AlertDialogTitle, AlertDialogDescription, AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 export default function Account() {
@@ -88,6 +92,7 @@ function Dashboard({ customer, logout, t }) {
             </div>
 
             <ProfileCard customer={customer} t={t} />
+            <DeleteAccountCard t={t} />
             <OrdersCard t={t} />
         </div>
     );
@@ -129,6 +134,76 @@ function ProfileCard({ customer, t }) {
                 <button type="button" onClick={() => setAddresses((arr) => [...arr, ""])} className="mt-2 inline-flex items-center gap-1 text-sm text-forest hover:text-terracotta"><Plus className="w-4 h-4" /> {t("add_address")}</button>
             </div>
             <Button onClick={save} disabled={busy} className="mt-5 rounded-full bg-forest hover:bg-forest-dark text-white">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t("save_changes")}</Button>
+        </section>
+    );
+}
+
+/* ---------------- Delete account (App Store 5.1.1(v)) ---------------- */
+function DeleteAccountCard({ t }) {
+    const { deleteAccount } = useCustomer();
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const [open, setOpen] = useState(false);
+    const [password, setPassword] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+
+    const onOpenChange = (next) => {
+        if (busy) return;
+        setOpen(next);
+        if (!next) { setPassword(""); setError(""); }
+    };
+
+    const confirmDelete = async (e) => {
+        e.preventDefault();
+        if (!password || busy) return;
+        setBusy(true);
+        setError("");
+        try {
+            await deleteAccount(password);
+            queryClient.removeQueries({ queryKey: ["customer-orders"] });
+            toast.success(t("account_deleted"));
+            navigate("/");
+        } catch (err) {
+            const d = err.response?.data?.detail;
+            if (d?.message === "incorrect_password") setError(t("delete_wrong_password"));
+            else if (d?.message === "open_orders") setError(t("delete_blocked_open_orders"));
+            else setError(formatApiError(d));
+            setBusy(false);
+        }
+    };
+
+    return (
+        <section className="rounded-2xl bg-white border border-destructive/30 p-6" data-testid="delete-account-card">
+            <h2 className="font-heading font-semibold text-lg mb-1 flex items-center gap-2 text-destructive"><Trash2 className="w-5 h-5" /> {t("delete_account")}</h2>
+            <p className="text-sm text-muted-foreground">{t("delete_account_desc")}</p>
+            <Button type="button" variant="outline" onClick={() => setOpen(true)} data-testid="delete-account-open"
+                className="mt-4 rounded-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground">
+                {t("delete_account")}
+            </Button>
+
+            <AlertDialog open={open} onOpenChange={onOpenChange}>
+                <AlertDialogContent data-testid="delete-account-dialog">
+                    <form onSubmit={confirmDelete} className="grid gap-4">
+                        <AlertDialogHeader className="text-start sm:text-start">
+                            <AlertDialogTitle>{t("delete_account_title")}</AlertDialogTitle>
+                            <AlertDialogDescription>{t("delete_account_warning")}</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <div>
+                            <Label htmlFor="delete-account-password" className="text-sm mb-1.5 block">{t("delete_account_password")}</Label>
+                            <Input id="delete-account-password" type="password" autoComplete="current-password" value={password}
+                                onChange={(e) => setPassword(e.target.value)} data-testid="delete-account-password" />
+                            {error && <p className="text-sm text-destructive mt-2" role="alert" data-testid="delete-account-error">{error}</p>}
+                        </div>
+                        <AlertDialogFooter className="gap-2 sm:gap-0">
+                            <AlertDialogCancel type="button" disabled={busy}>{t("delete_cancel")}</AlertDialogCancel>
+                            <Button type="submit" variant="destructive" disabled={!password || busy} data-testid="delete-account-confirm">
+                                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t("delete_account_confirm")}
+                            </Button>
+                        </AlertDialogFooter>
+                    </form>
+                </AlertDialogContent>
+            </AlertDialog>
         </section>
     );
 }

@@ -44,8 +44,16 @@ export function CustomerAuthProvider({ children }) {
         return data;
     }, []);
 
+    // Permanently deletes the signed-in customer's account (password re-confirmed server-side),
+    // then drops the local session. Throws on failure so the caller can show the reason.
+    const deleteAccount = useCallback(async (password) => {
+        await api.post("/customer/delete-account", { password });
+        clearTokens();
+        setCustomer(false);
+    }, []);
+
     return (
-        <CustomerAuthContext.Provider value={{ customer, register, login, logout, updateProfile, reload: loadMe }}>
+        <CustomerAuthContext.Provider value={{ customer, register, login, logout, updateProfile, deleteAccount, reload: loadMe }}>
             {children}
         </CustomerAuthContext.Provider>
     );

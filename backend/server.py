@@ -372,6 +372,10 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class CustomerDeleteIn(BaseModel):
+    password: str
+
+
 class CartItemIn(BaseModel):
     # Coerce numeric barcodes (e.g. Coffee items like 79970003) to string so the
     # order request is not rejected by strict string validation.
@@ -1254,6 +1258,68 @@ async def customer_orders(customer: dict = Depends(get_current_customer)):
     docs = await db.orders.find({}).sort("created_at", -1).to_list(1000)
     mine = [clean(d) for d in docs if _normalize_phone((d.get("customer") or {}).get("phone", "")) == target]
     return mine[:200]
+
+
+OPEN_ORDER_STATUSES = ("NEW", "PREPARING", "READY")
+DELETED_CUSTOMER_NAME = "Deleted customer"
+
+
+@api.post("/customer/delete-account")
+@limiter.limit("5/minute")
+async def customer_delete_account(request: Request, payload: CustomerDeleteIn,
+                                  customer: dict = Depends(get_current_customer)):
+    """Self-service account deletion (App Store 5.1.1(v)).
+
+    The account is always the authenticated caller's own (taken from the token, never from the
+    request). Deletes the login/profile and anonymizes personal data on retained orders and staff
+    notifications; order, item and payment records are kept for sales/accounting. Blocked while any
+    of the customer's orders is still open. Steps are idempotent and the account is removed last, so
+    a failure midway leaves the account in place to retry. Existing JWTs stop working at once because
+    get_current_customer and /customer/refresh both look the customer up on every call.
+    """
+    if not verify_password(payload.password, customer["password_hash"]):
+        # 403 (not 401): a 401 would make the client try a token refresh and retry.
+        raise HTTPException(status_code=403, detail={"message": "incorrect_password"})
+
+    # Orders are linked to an account only by phone number (digits-only match, like /customer/orders).
+    phone = _normalize_phone(customer.get("phone", ""))
+    order_ids, order_nos, open_nos = [], [], []
+    if phone:
+        async for o in db.orders.find({}, {"order_no": 1, "order_status": 1, "customer.phone": 1}):
+            if _normalize_phone((o.get("customer") or {}).get("phone", "")) != phone:
+                continue
+            order_ids.append(o["_id"])
+            if o.get("order_no"):
+                order_nos.append(o["order_no"])
+            if o.get("order_status", "NEW") in OPEN_ORDER_STATUSES:
+                open_nos.append(o.get("order_no"))
+    if open_nos:
+        raise HTTPException(status_code=409, detail={"message": "open_orders", "order_nos": open_nos})
+
+    if order_ids:
+        await db.orders.update_many({"_id": {"$in": order_ids}}, {"$set": {
+            "customer.name": DELETED_CUSTOMER_NAME, "customer.phone": "", "customer.email": None,
+            "customer.address": "", "customer.area": "", "customer.notes": None,
+            "customer.shareholder_number": None,
+            "vehicle_number": None, "vehicle_color": None,
+            "customer_anonymized_at": now_iso(),
+        }})
+    if order_nos:
+        await db.staff_notifications.update_many({"order_no": {"$in": order_nos}}, {"$set": {
+            "customer_name": DELETED_CUSTOMER_NAME, "vehicle_number": None, "vehicle_color": None,
+        }})
+    if phone:
+        await db.guest_otp_sessions.delete_many({"phone": phone})
+
+    cid = str(customer["_id"])
+    await db.customers.delete_one({"_id": customer["_id"]})
+    try:
+        # Non-PII only: no phone/name, no request (IP).
+        await audit({"id": cid}, "customer_self_delete", "customer", cid, None, None,
+                    {"orders_anonymized": len(order_ids)})
+    except Exception:  # noqa: BLE001 -- the deletion itself already succeeded
+        logger.exception("audit write failed for customer self-delete")
+    return {"deleted": True}
 
 
 # ============================== Admin ======================================
