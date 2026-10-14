@@ -6,6 +6,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useSeo } from "@/hooks/use-seo";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { resolveImageUrl } from "@/lib/image";
+import { AppDownloadSection } from "@/components/storefront/AppDownload";
 
 // Intrinsic size of both language banners (1536x1024, 3:2) — kept on the <img> so the
 // browser reserves the right box before the file loads, preventing layout shift.
@@ -105,6 +106,9 @@ export default function Home() {
             {featured?.items?.length > 0 && (
                 <ProductSection title={t("featured")} viewAllHref="/products?featured=true" items={featured.items} t={t} />
             )}
+
+            {/* Download Our App (website only — hidden inside the native apps) */}
+            <AppDownloadSection />
         </div>
     );
 }

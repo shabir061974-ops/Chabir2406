@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { MapPin, Phone, Mail } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
+import { FooterAppDownload } from "./AppDownload";
 
 export const Footer = () => {
     const { t } = useLang();
@@ -31,6 +32,7 @@ export const Footer = () => {
                     </ul>
                 </div>
             </div>
+            <FooterAppDownload />
             <div className="border-t border-white/10 py-5 text-center text-xs text-white/50">
                 <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-2 text-white/60" data-testid="footer-legal-links">
                     <Link to="/about" className="hover:text-white">{t("nav_about")}</Link>

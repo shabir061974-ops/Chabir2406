@@ -271,6 +271,11 @@ export const translations = {
         notification_time: "Time",
         notification_mark_read: "Mark as read",
         notification_mark_all_read: "Mark all as read",
+        app_download_title: "Download Our App",
+        app_download_text: "Shop conveniently with Faiha Store on your iPhone or Android device.",
+        app_download_short: "Get the Faiha Store app",
+        app_store_alt: "Download on the App Store",
+        google_play_alt: "Get it on Google Play",
     },
     ar: {
         brand: "جمعية الفيحاء",
@@ -544,6 +549,11 @@ export const translations = {
         notification_time: "الوقت",
         notification_mark_read: "تم الاطلاع",
         notification_mark_all_read: "تم الاطلاع على الكل",
+        app_download_title: "حمّل تطبيقنا",
+        app_download_text: "تسوّق بسهولة مع متجر الفيحاء على جهاز iPhone أو Android.",
+        app_download_short: "حمّل تطبيق متجر الفيحاء",
+        app_store_alt: "حمّله من App Store",
+        google_play_alt: "احصل عليه من Google Play",
     },
 };
 
